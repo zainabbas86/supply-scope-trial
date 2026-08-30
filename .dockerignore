@@ -1,0 +1,15 @@
+supply_scope_docs
+node_modules
+vendor
+.git
+.omc
+bootstrap/cache/*
+storage/logs/*
+storage/framework/views/*
+public/build
+database/database.sqlite
+.env
+.env.*
+*.bak
+*.bak-*
+PLAN.md

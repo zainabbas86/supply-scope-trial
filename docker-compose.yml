@@ -1,0 +1,212 @@
+# =============================================================================
+# Label Extraction Agent — container topology
+#
+# One image, several roles. web, worker, migrate and test all build from the
+# SAME Dockerfile; only the target stage and the command differ. That is what
+# makes this deployable to any container host without a second build.
+#
+# No `version:` key — obsolete in Compose v2, it only produces warnings.
+#
+# Secrets are never written here. Values reach the stack from `.env` two ways:
+#   1. Compose auto-loads `.env` to resolve ${VAR} inside THIS file.
+#   2. `env_file:` injects that same file into the app containers at runtime.
+# Separate mechanisms; both are in use below.
+# =============================================================================
+
+# --- Shared app definition ---------------------------------------------------
+# A YAML anchor, not a Compose feature: web/worker/migrate/test are the same
+# artifact, so the config is written once and merged in with `<<:`.
+x-app: &app
+    build:
+        context: .
+        target: runtime
+    # An explicit image name means Compose builds ONCE and the other services
+    # reuse that result instead of rebuilding per service.
+    image: label-extractor:local
+    env_file:
+        - .env
+    environment: &app-env
+        # -- Container-network overrides -----------------------------------
+        # `.env` holds HOST values (127.0.0.1:55432) so Herd can reach the
+        # containers from outside. Inside the compose network the addresses
+        # are the service names on their NATIVE ports. Overriding the host
+        # but forgetting the port is the classic failure here: the container
+        # dials postgres:55432 and hangs until it times out.
+        # `environment:` takes precedence over `env_file:`.
+        DB_HOST: postgres
+        DB_PORT: 5432
+        REDIS_HOST: redis
+        REDIS_PORT: 6379
+        # Logs to stdout, never to a file inside a container — stdout is what
+        # a container platform collects. Overrides LOG_CHANNEL=stack in .env.
+        LOG_CHANNEL: stderr
+    depends_on:
+        # `service_healthy`, not the default `service_started`. Postgres
+        # accepts TCP connections seconds before it accepts QUERIES; without
+        # this the app boots first and the first migration dies on a refused
+        # connection.
+        postgres:
+            condition: service_healthy
+        redis:
+            condition: service_healthy
+    restart: unless-stopped
+
+services:
+    # -------------------------------------------------------------------------
+    # web — serves HTTP. Latency-bound workload.
+    # -------------------------------------------------------------------------
+    web:
+        <<: *app
+        environment:
+            <<: *app-env
+            # FrankenPHP is Caddy-based and provisions TLS automatically by
+            # default. `:8080` pins it to plain HTTP on a NON-PRIVILEGED port,
+            # which is what lets the container run as a non-root user without
+            # granting CAP_NET_BIND_SERVICE. Must match the Dockerfile.
+            SERVER_NAME: ":8080"
+        ports:
+            # Host 8080 because Herd already runs nginx on port 80 here, and
+            # container 8080 because the app runs non-root and cannot bind a
+            # privileged port. Keep APP_URL in `.env` in sync.
+            - "${APP_PORT:-8080}:8080"
+        volumes:
+            # THE load-bearing decision of this file. The worker is a separate
+            # container and must re-read files the web container wrote;
+            # container-local disk does not cross that boundary. In production
+            # this same path is backed by S3/GCS via FILESYSTEM_DISK.
+            # Mounted at storage/app only — mounting all of storage/ would
+            # shadow the framework/ and logs/ trees the image creates.
+            - storage-data:/app/storage/app
+        healthcheck:
+            # Laravel's built-in health endpoint, registered in bootstrap/app.php.
+            # Needs curl in the runtime image — the Dockerfile must install it.
+            test: ["CMD", "curl", "-fsS", "http://localhost:8080/up"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 20s
+
+    # -------------------------------------------------------------------------
+    # worker — consumes the extraction queue. Quota-bound workload, scaled
+    # independently of web:  docker compose up -d --scale worker=3
+    # -------------------------------------------------------------------------
+    worker:
+        <<: *app
+        # A SEPARATE PROCESS in a SEPARATE CONTAINER — never QUEUE_CONNECTION=sync.
+        # --max-time recycles the worker hourly so a slow PHP memory leak cannot
+        # accumulate; the queue redelivers anything in flight.
+        command: >
+            php artisan queue:work
+            --queue=${EXTRACTION_QUEUE:-extraction}
+            --tries=${EXTRACTION_MAX_TRIES:-3}
+            --timeout=${EXTRACTION_JOB_TIMEOUT:-120}
+            --max-time=3600
+        # No `ports:` — the worker is unreachable from outside, by design.
+        volumes:
+            - storage-data:/app/storage/app
+        # Graceful shutdown. queue:work traps SIGTERM and finishes the job in
+        # hand rather than dying mid-call. The grace period MUST exceed the job
+        # timeout (120s), or Docker SIGKILLs an in-flight OpenAI request during
+        # a redeploy and that work is lost.
+        stop_signal: SIGTERM
+        stop_grace_period: 150s
+
+    # -------------------------------------------------------------------------
+    # migrate — one-shot. Behind a profile so `docker compose up` does NOT run
+    # it: migrating on container boot races across replicas. Run explicitly:
+    #   docker compose run --rm migrate
+    # -------------------------------------------------------------------------
+    migrate:
+        <<: *app
+        profiles: ["cli"]
+        command: php artisan migrate --force
+        restart: "no"
+
+    # -------------------------------------------------------------------------
+    # test — builds the `test` stage, which keeps dev dependencies and tests.
+    # The runtime image installs --no-dev, so it has neither Pest nor PHPUnit
+    # and could never run the suite. Run:
+    #   docker compose run --rm test
+    # -------------------------------------------------------------------------
+    test:
+        <<: *app
+        profiles: ["cli"]
+        build:
+            context: .
+            target: test
+        image: label-extractor:test
+        command: php artisan test
+        restart: "no"
+        environment:
+            <<: *app-env
+            # Proves no test reaches the network: the suite must pass with the
+            # key blank, which is only true if the extractor is faked.
+            OPENAI_API_KEY: ""
+
+    # -------------------------------------------------------------------------
+    # postgres
+    # -------------------------------------------------------------------------
+    postgres:
+        image: postgres:17
+        environment:
+            POSTGRES_DB: ${DB_DATABASE}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            # UTF8 is not decoration. Extracted product names contain en-dashes
+            # ("Coldwater Bay - Fish - Fillets - Battered" uses U+2013); a
+            # non-UTF8 cluster corrupts them silently. §6 asserts a non-ASCII
+            # round trip, and this is what makes that assertion meaningful.
+            POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+        ports:
+            # Published so Herd on the host can reach it — the fast inner loop.
+            # .env's DB_PORT is that host port; the container still listens 5432.
+            - "${DB_PORT:-55432}:5432"
+        volumes:
+            - pgdata:/var/lib/postgresql/data
+        healthcheck:
+            # pg_isready, not a TCP probe: it reports when the server will
+            # actually answer queries, which is what depends_on needs to know.
+            test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+            start_period: 10s
+        restart: unless-stopped
+
+    # -------------------------------------------------------------------------
+    # redis — queue + cache + session store.
+    # -------------------------------------------------------------------------
+    redis:
+        image: redis:7-alpine
+        # The stock image starts with NO password, but .env sets REDIS_PASSWORD,
+        # so Laravel sends AUTH and gets back:
+        #   ERR Client sent AUTH, but no password is set
+        # --requirepass is what makes the two agree.
+        # appendonly yes: queued jobs survive a container restart.
+        command: >
+            redis-server
+            --appendonly yes
+            --requirepass ${REDIS_PASSWORD}
+        environment:
+            # Present only so the healthcheck below can authenticate.
+            REDIS_PASSWORD: ${REDIS_PASSWORD}
+        ports:
+            - "${REDIS_PORT:-56379}:6379"
+        volumes:
+            - redisdata:/data
+        healthcheck:
+            # $$ escapes to a literal $ for the container's shell — a single $
+            # would be interpolated by Compose on the host instead.
+            test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+            start_period: 5s
+        restart: unless-stopped
+
+volumes:
+    pgdata:
+    redisdata:
+    # Shared by web AND worker. Named, not a bind mount: this is the dev
+    # stand-in for object storage, and it must survive `docker compose down`.
+    storage-data:
