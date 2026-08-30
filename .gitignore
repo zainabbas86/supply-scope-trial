@@ -1,0 +1,67 @@
+# --- Trial-task specific -----------------------------------------------------
+# The task brief and sample spec sheets are supplied material, not our source.
+# The brief (.docx) also contains a live OpenAI API key, so it must never be
+# committed. Keep this rule above everything else so it is hard to miss.
+/supply-scope-docs/
+
+# --- Secrets -----------------------------------------------------------------
+.env
+.env.*
+!.env.example
+auth.json
+
+# --- Dependencies ------------------------------------------------------------
+/vendor
+/node_modules
+/.pnp
+.pnp.js
+npm-debug.log
+yarn-error.log
+
+# --- Build output ------------------------------------------------------------
+/public/build
+/public/hot
+/public/storage
+/storage/pail
+.vite
+
+# --- Laravel runtime ---------------------------------------------------------
+# Uploaded documents live under storage/app; in Docker this is a shared volume
+# and in production it is object storage. Either way it is never version control.
+/storage/app/documents
+/storage/*.key
+/storage/framework/cache/*
+/storage/framework/sessions/*
+/storage/framework/testing/*
+/storage/framework/views/*
+/storage/logs/*
+!/storage/**/.gitignore
+/bootstrap/cache/*
+!/bootstrap/cache/.gitignore
+
+# --- Testing / tooling caches ------------------------------------------------
+/.phpunit.cache
+.phpunit.result.cache
+/.pest
+/coverage
+/.php-cs-fixer.cache
+/.phpstan.cache
+/tests/Browser/screenshots
+/tests/Browser/console
+
+# --- Editors & OS ------------------------------------------------------------
+/.idea
+/.vscode
+/.fleet
+/.zed
+/.nova
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Agent / local tooling state ---------------------------------------------
+/.omc
+/.claude/settings.local.json
+PLAN.md
