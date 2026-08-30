@@ -1,58 +1,169 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Label Extraction Agent
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Upload a product label or specification sheet; a vision LLM reads it and returns structured product
+data — product name, brand, ingredients, allergens and net weight — which the app stores and renders
+field by field, with the page each value came from.
 
-## About Laravel
+Built for SupplyScope's Stage-1 developer trial.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+> **Status: in active development.** The sections marked 🚧 below are filled in as the build
+> progresses. See [Build status](#build-status) for what currently works.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+---
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+## What it does
 
-## Learning Laravel
+1. You drop one or more files onto the upload page (PDF, JPEG, PNG or WebP).
+2. Each file is validated, hashed, and written to object storage — then a job is queued. The request
+   returns immediately; nothing waits on the model.
+3. A **separate worker container** picks the job up, sends the document to OpenAI, validates what
+   comes back, and persists it.
+4. The list view updates as documents move `queued → processing → completed`, and failures surface a
+   readable reason with a retry button.
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+Extraction takes roughly **18 seconds** for a 3-page specification sheet. That number is the entire
+justification for the queue: it is far outside a reasonable web-request budget, so the work has to
+happen out of band or the upload request holds a connection open for the duration.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Why the design looks like this
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+The design is driven by what the sample documents actually turned out to be. They are not photos of
+labels — they are 3-page **product specification sheets**, rendered as images at 1660×2340 px with
+**zero embedded text**. Three consequences shaped everything:
 
-## Agentic Development
+**A vision model is mandatory.** Text extraction returns nothing at all, so there is no "parse the
+PDF text" path to fall back on. The whole document goes to the model as a file.
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+**Fields span multiple pages.** Product name, brand and pack size sit on page 1; ingredients and
+allergens on page 2. Any first-page-only implementation silently loses half the data and looks like
+it worked.
 
-```bash
-composer require laravel/boost --dev
+**The documents are genuinely ambiguous, and the schema has to say so honestly.** This is the part
+that matters most for a food-safety product:
 
-php artisan boost:install
+| Ambiguity found in a sample | Naive result | What this app does |
+|---|---|---|
+| Allergen statement reads *"VITAL NOT COMPLETED"*, while Fish, Wheat and Milk appear only as bold words inside the ingredient declaration | Either "no allergens" (dangerously wrong) or an invented declared list | Records `statement_status: not_completed` **and** `derived_from_ingredients: [Fish, Wheat, Milk]` — the truthful answer |
+| One page offers `Weight-Portion 112 g`, `NET Weight/Pack 800 g`, and `Pack Size 800 g × 4 bags/carton` | A bare `"800g"` that throws away what it refers to | `{ value, unit, basis: per_pack, raw_text, source_page }` |
+| One sample is a cleaning chemical, not food — "ingredients" means something else and "allergens" barely applies | Empty strings, or fabricated allergens | `product_type: non_food`, allergens `not_applicable`, nullable fields with a stated reason |
+
+Every extracted field carries the **page number it came from**, and the model is instructed never to
+infer or invent — absent values come back `null` with a warning attached, not as a plausible guess.
+
+## Architecture
+
+One image, two roles. The same artifact runs the web process and the worker process; only the
+command differs. That is what makes it deployable to any container host without a second build.
+
+```
+                        ┌──────────────────────────────────────┐
+                        │  image: label-extractor (multi-stage)│
+                        │  vendor + built JS baked in, no      │
+                        │  composer/node in the final layer    │
+                        └───────────┬──────────────┬───────────┘
+                                    │              │
+                     CMD: frankenphp│              │CMD: artisan queue:work
+                                    ▼              ▼
+Browser ──▶  ┌──────────────┐   ┌────────┐    ┌──────────┐
+ (React 19   │   web        │   │  web   │    │  worker  │  ← scales independently
+  + Inertia) │  container   │   │  (xN)  │    │   (xN)   │
+             └──────┬───────┘   └────────┘    └────┬─────┘
+                    │  POST /documents               │
+                    │  (validate, hash, store,       │  re-reads file, calls OpenAI,
+                    │   enqueue, return)             │  validates, persists
+                    ▼                                ▼
+             ┌──────────────┐  ┌──────────────┐  ┌─────────────────────────┐
+             │  Redis       │  │ PostgreSQL 17│  │  Object storage         │
+             │  queue+cache │  │              │  │  dev: shared volume     │
+             │  +session    │  │              │  │  prod: S3/GCS           │
+             └──────────────┘  └──────────────┘  └─────────────────────────┘
+                    ▲
+                    │  GET /documents/status (polled while any doc is in flight)
+                 Browser
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+**Web and worker are separate containers, and that has a load-bearing consequence:** the worker must
+re-read the file the web container wrote, and container-local disk does not survive that boundary.
+So `FILESYSTEM_DISK` is environment-driven from day one — a shared named volume in Compose, S3 or GCS
+in a real deployment. Writing to `storage/app` inside one container works on a laptop and breaks the
+moment it is deployed; that trap is designed out rather than discovered later.
 
-## Contributing
+They also scale independently for a real reason: the web tier is latency-bound, while extraction is
+bound by the OpenAI rate limit. Those two workloads want different numbers of replicas.
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## Stack
 
-## Code of Conduct
+| Layer | Choice | Why |
+|---|---|---|
+| Backend | Laravel 13, PHP 8.4 | Matches SupplyScope's stack |
+| Frontend | Inertia + React 19 + TypeScript | Server-driven routing without building a separate API |
+| Database | PostgreSQL 17 | `jsonb` for extracted payloads; UTF8 throughout |
+| Queue / cache / session | Redis 7 | Real queue with retries, backoff and a failed-jobs table |
+| Runtime | FrankenPHP | One process serving HTTP — no nginx + php-fpm + supervisor sandwich |
+| Containers | Docker Compose | Multi-stage build; web, worker, migrate and test from one image |
+| Tests | Pest + Vitest | |
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## Data model
 
-## Security Vulnerabilities
+Three tables, deliberately separating *the file*, *the result*, and *each attempt at producing it*:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+- **`documents`** — the uploaded file: filename, MIME type, size, `sha256`, page count, disk and
+  path, status, failure code and reason, attempt count, timing. The `disk` is stored per document, so
+  files written under a local disk stay readable after a later migration to S3.
+- **`extractions`** — one row per successfully extracted document, holding the structured result.
+- **`extraction_attempts`** — one row per attempt, successful or not: model, prompt version, outcome,
+  error class, HTTP status, latency and token counts. This is the observability surface — it answers
+  "why did this document fail?" without reading logs.
 
-## License
+`sha256` is what makes *"what if the same file is uploaded twice"* and *"what if the job runs twice"*
+answerable rather than hopeful.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Getting started
+
+🚧 *Filled in once the container layer is complete.*
+
+## Configuration
+
+All configuration is environment-driven — no hostnames, ports or credentials are hardcoded. Copy
+`.env.example` to `.env` and fill in the blanks.
+
+| Variable | Purpose |
+|---|---|
+| `OPENAI_API_KEY` | API key. Injected at runtime; never baked into an image layer. |
+| `OPENAI_MODEL` | Extraction model (default `gpt-5.5`). |
+| `OPENAI_BASE_URL` | Overridable so a deployed instance can be pointed at a mock. |
+| `FILESYSTEM_DISK` | Where uploads live. Shared volume in dev, S3/GCS in production. |
+| `QUEUE_CONNECTION` | Redis. Never `sync` — the worker is a separate process, by design. |
+| `EXTRACTION_TIMEOUT` | HTTP timeout for the model call (90s). |
+| `EXTRACTION_JOB_TIMEOUT` | Queue job timeout (120s), deliberately above the HTTP timeout. |
+| `UPLOAD_MAX_FILE_SIZE_KB` | Per-file upload cap. |
+| `UPLOAD_MAX_PDF_PAGES` | Page cap — a very long PDF is a latency and abuse vector. |
+
+## Testing
+
+🚧 *Filled in at the testing stage.*
+
+## Deployment
+
+🚧 *Filled in once the container layer is complete.*
+
+Nothing is currently hosted, but deploy-readiness is a hard design goal: the stack is containerised
+and twelve-factor throughout, so hosting it is a configuration exercise rather than a rewrite.
+
+## What was cut, and why
+
+🚧 *Filled in at the end.* Scope was deliberately traded to spend the time on failure handling and
+tests instead.
+
+## Build status
+
+- [x] Laravel 13 scaffold, dependencies, twelve-factor environment
+- [ ] Container layer — Dockerfile, Compose stack
+- [ ] Inertia + React wiring
+- [ ] Domain model and migrations
+- [ ] Upload and validation
+- [ ] Queue, job and reliability
+- [ ] LLM extraction layer
+- [ ] Frontend
+- [ ] Tests
+- [ ] `DECISIONS.md`
