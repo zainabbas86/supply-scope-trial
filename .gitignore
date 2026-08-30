@@ -9,6 +9,8 @@
 .env.*
 !.env.example
 auth.json
+*.bak-*
+*.bak
 
 # --- Dependencies ------------------------------------------------------------
 /vendor
