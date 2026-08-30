@@ -13,12 +13,14 @@ Built for SupplyScope's Stage-1 developer trial.
 
 ## What it does
 
-1. You drop one or more files onto the upload page (PDF, JPEG, PNG or WebP).
-2. Each file is validated, hashed, and written to object storage — then a job is queued. The request
+1. You sign in. There is no public access and no self-registration — see
+   [Access control](#access-control).
+2. You drop one or more files onto the upload page (PDF, JPEG, PNG or WebP).
+3. Each file is validated, hashed, and written to object storage — then a job is queued. The request
    returns immediately; nothing waits on the model.
-3. A **separate worker container** picks the job up, sends the document to OpenAI, validates what
+4. A **separate worker container** picks the job up, sends the document to OpenAI, validates what
    comes back, and persists it.
-4. The list view updates as documents move `queued → processing → completed`, and failures surface a
+5. The list view updates as documents move `queued → processing → completed`, and failures surface a
    readable reason with a retry button.
 
 Extraction takes roughly **18 seconds** for a 3-page specification sheet. That number is the entire
@@ -101,6 +103,7 @@ bound by the OpenAI rate limit. Those two workloads want different numbers of re
 | Queue / cache / session | Redis 7 | Real queue with retries, backoff and a failed-jobs table |
 | Runtime | FrankenPHP | One process serving HTTP — no nginx + php-fpm + supervisor sandwich |
 | Containers | Docker Compose | Multi-stage build; web, worker, migrate and test from one image |
+| Auth | Hand-rolled session login | One env-seeded account; Breeze/Fortify would drag in registration and password reset |
 | Tests | Pest + Vitest | |
 
 ## Data model
@@ -116,7 +119,36 @@ Three tables, deliberately separating *the file*, *the result*, and *each attemp
   "why did this document fail?" without reading logs.
 
 `sha256` is what makes *"what if the same file is uploaded twice"* and *"what if the job runs twice"*
-answerable rather than hopeful.
+answerable rather than hopeful. Deduplication is scoped **per owner**, never global — matching on the
+hash alone would hand one user another user's extraction.
+
+Documents are owned, and a user only ever sees their own. Ownership is stored polymorphically
+(`owner_type` / `owner_id`) and every query resolves the owner through a single seam, so
+organisation-level tenancy is a later data migration rather than a rewrite. `uploaded_by_user_id` is
+tracked separately from the owner, because under tenancy an organisation owns a document that a person
+uploaded.
+
+## Access control
+
+The app is behind a login. That is a deliberate addition rather than a requirement of the brief, and
+the reason is the API key: every upload is a vision-model call billed to the key that ships with this
+project. An unauthenticated upload form on a public URL is an open invitation to spend someone else's
+money, and to feed the model documents containing injected instructions whose output this app then
+stores and renders.
+
+- **A single login, seeded from the environment.** `php artisan app:ensure-admin` reads `ADMIN_EMAIL`,
+  `ADMIN_NAME` and `ADMIN_PASSWORD`, hashes the password, and is idempotent — re-running it rotates
+  the credential rather than creating a second account. If `ADMIN_PASSWORD` is unset it creates
+  nothing and warns; a predictable default would be worse than no account at all.
+- **No self-registration, no password reset.** Neither is asked for, and each is another surface to
+  secure. Registration in particular would reopen exactly the hole the login closes.
+- **Per-route rate limits**, sized to what each route actually does. Login is limited per email and IP
+  against credential stuffing; uploads are limited because each accepted file costs an API call, which
+  makes it a spend control rather than a load control; the status endpoint is deliberately *generous*
+  because the UI polls it every 2.5 seconds per open tab.
+- **A daily extraction ceiling**, so a leaked credential cannot run up an unbounded bill overnight.
+
+Only the login page and the `/up` health endpoint are public.
 
 ## Getting started
 
@@ -138,6 +170,9 @@ All configuration is environment-driven — no hostnames, ports or credentials a
 | `EXTRACTION_JOB_TIMEOUT` | Queue job timeout (120s), deliberately above the HTTP timeout. |
 | `UPLOAD_MAX_FILE_SIZE_KB` | Per-file upload cap. |
 | `UPLOAD_MAX_PDF_PAGES` | Page cap — a very long PDF is a latency and abuse vector. |
+| `ADMIN_EMAIL` / `ADMIN_NAME` | Identity of the single seeded account. |
+| `ADMIN_PASSWORD` | Seeded password, hashed on write. Leave unset and no account is created. |
+| `EXTRACTION_DAILY_LIMIT` | Hard ceiling on extractions per day — a spend control. |
 
 ## Testing
 
@@ -161,6 +196,7 @@ tests instead.
 - [ ] Container layer — Dockerfile, Compose stack
 - [ ] Inertia + React wiring
 - [ ] Domain model and migrations
+- [ ] Access control — login gate, env-seeded admin, rate limiting
 - [ ] Upload and validation
 - [ ] Queue, job and reliability
 - [ ] LLM extraction layer
