@@ -198,7 +198,7 @@ tests instead.
 - [x] Domain model and migrations
 - [x] Access control — login gate, env-seeded admin, rate limiting
 - [x] Upload and validation
-- [ ] Queue, job and reliability
+- [x] Queue, job and reliability
 - [ ] LLM extraction layer
 - [ ] Frontend
 - [ ] Tests

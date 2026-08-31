@@ -66,9 +66,24 @@ return [
 
         'redis' => [
             'driver' => 'redis',
-            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            // A dedicated Redis database, so cache:clear cannot flush the queue.
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'queue'),
             'queue' => env('REDIS_QUEUE', 'default'),
-            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
+
+            /*
+             * retry_after MUST exceed the job timeout. The required ordering is
+             *
+             *     http timeout (90s) < job timeout (120s) < retry_after (180s)
+             *
+             * Laravel's default is 90, which is BELOW our 120s job timeout: a
+             * slow extraction would still be running when Redis decided it had
+             * been lost and handed it to a second worker. Two workers, one
+             * document, two OpenAI bills, and a race to write the result.
+             *
+             * This is the classic queue misconfiguration, and it is invisible
+             * until a job runs long — which is exactly when it hurts most.
+             */
+            'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 180),
             'block_for' => null,
             'after_commit' => false,
         ],

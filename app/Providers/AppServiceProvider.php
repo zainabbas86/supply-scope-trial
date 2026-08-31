@@ -6,6 +6,8 @@ namespace App\Providers;
 
 use App\Models\Document;
 use App\Policies\DocumentPolicy;
+use App\Services\Extraction\FakeLabelExtractor;
+use App\Services\Extraction\LabelExtractor;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -16,7 +18,11 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        // §4 replaces this with OpenAiLabelExtractor. Every consumer depends on
+        // the interface, so that swap touches exactly one line — and the test
+        // suite keeps binding the fake, which is what guarantees no test ever
+        // reaches the network.
+        $this->app->bind(LabelExtractor::class, FakeLabelExtractor::class);
     }
 
     public function boot(): void
@@ -58,6 +64,19 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('default', fn (Request $request) => Limit::perMinute(
             (int) config('access.throttle.default')
         )->by($this->identify($request)));
+
+        /*
+         * Not an HTTP limiter — this one throttles the QUEUE, via the
+         * RateLimited middleware on ExtractLabelData.
+         *
+         * Sized to the provider's requests-per-minute allowance so we shed load
+         * deliberately instead of discovering the limit as a wall of 429s.
+         * Keyed globally ('provider') rather than per user: the quota belongs
+         * to the API key, and every worker in every container shares it.
+         */
+        RateLimiter::for('extraction', fn () => Limit::perMinute(
+            (int) config('extraction.rate_limit_per_minute')
+        )->by('provider'));
     }
 
     /**
