@@ -196,7 +196,7 @@ tests instead.
 - [x] Container layer — Dockerfile, Compose stack
 - [x] Inertia + React 19 + TypeScript wiring
 - [x] Domain model and migrations
-- [ ] Access control — login gate, env-seeded admin, rate limiting
+- [x] Access control — login gate, env-seeded admin, rate limiting
 - [ ] Upload and validation
 - [ ] Queue, job and reliability
 - [ ] LLM extraction layer

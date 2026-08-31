@@ -15,7 +15,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             auth: {
                 user: {
-                    id: string;
+                    id: number;
                     name: string;
                     email: string;
                 } | null;

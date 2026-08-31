@@ -37,7 +37,26 @@ class HandleInertiaRequests extends Middleware
     {
         return [
             ...parent::share($request),
-            //
+
+            // Shared with EVERY page. The TypeScript shape of this array lives
+            // in resources/js/types/inertia.d.ts and is maintained by hand —
+            // PHP types do not flow into TypeScript, so renaming a key here
+            // leaves the type-checker green while the UI renders undefined.
+            // Change one, change the other.
+            'auth' => [
+                'user' => $request->user() ? [
+                    'id' => $request->user()->id,
+                    'name' => $request->user()->name,
+                    'email' => $request->user()->email,
+                ] : null,
+            ],
+
+            // Closures are evaluated per request rather than on every partial
+            // reload, and reading a flash key consumes it.
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
+            ],
         ];
     }
 }
