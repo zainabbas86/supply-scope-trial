@@ -129,6 +129,12 @@ RUN npm ci
 # The whole context (minus .dockerignore) — the Vite config, resources/ and the
 # Tailwind content globs that scan resources/views and resources/js.
 COPY . .
+
+# Type-check BEFORE building. Vite/esbuild strip types without checking them, so
+# `npm run build` is green on code that does not type-check — proven in practice:
+# a 313 kB bundle built cleanly while tsc reported two real errors. Running the
+# gate here means a type error fails the image build instead of shipping.
+RUN npm run typecheck
 RUN npm run build
 
 
