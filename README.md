@@ -193,9 +193,9 @@ tests instead.
 ## Build status
 
 - [x] Laravel 13 scaffold, dependencies, twelve-factor environment
-- [ ] Container layer — Dockerfile, Compose stack
-- [ ] Inertia + React wiring
-- [ ] Domain model and migrations
+- [x] Container layer — Dockerfile, Compose stack
+- [x] Inertia + React 19 + TypeScript wiring
+- [x] Domain model and migrations
 - [ ] Access control — login gate, env-seeded admin, rate limiting
 - [ ] Upload and validation
 - [ ] Queue, job and reliability
