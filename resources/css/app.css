@@ -1,7 +1,19 @@
 @import 'tailwindcss';
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
+/* Laravel's default stylesheet also declares:
+ *   @source '../../storage/framework/views/*.php';
+ * That scans COMPILED Blade, which is host state: it holds whatever views have
+ * been rendered on this machine, and `.dockerignore` empties it in the image.
+ * The result is that a host build and a container build emit different CSS —
+ * we saw exactly that (app-U-TCIXzK.css locally vs app-BoJPu8xG.css in the
+ * image). Removed, so the build is reproducible.
+ *
+ * Nothing is lost here: Tailwind 4 auto-scans the project, `resources/views`
+ * is not gitignored so `app.blade.php` is picked up directly, and every other
+ * class lives in `.tsx`. The Blade paginator source is dropped for the same
+ * reason it is unused — pagination is rendered by React, not Blade. */
+@source '../../resources/views/**/*.blade.php';
+@source '../../resources/js/**/*.{ts,tsx}';
 
 @theme {
     --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
