@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Documents\UploadDocuments;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -44,4 +45,10 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/', fn () => Inertia::render('Documents/Index'))
         ->name('documents.index');
+
+    // Throttled as a SPEND control, not a load control: every accepted file is
+    // a vision-model call billed to the API key.
+    Route::post('documents', UploadDocuments::class)
+        ->middleware('throttle:upload')
+        ->name('documents.store');
 });

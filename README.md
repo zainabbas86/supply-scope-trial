@@ -197,7 +197,7 @@ tests instead.
 - [x] Inertia + React 19 + TypeScript wiring
 - [x] Domain model and migrations
 - [x] Access control — login gate, env-seeded admin, rate limiting
-- [ ] Upload and validation
+- [x] Upload and validation
 - [ ] Queue, job and reliability
 - [ ] LLM extraction layer
 - [ ] Frontend
