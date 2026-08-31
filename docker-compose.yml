@@ -40,6 +40,14 @@ x-app: &app
         # Logs to stdout, never to a file inside a container — stdout is what
         # a container platform collects. Overrides LOG_CHANNEL=stack in .env.
         LOG_CHANNEL: stderr
+    # The FrankenPHP base image bakes in HEALTHCHECK
+    # `curl -f http://localhost:2019/metrics` (Caddy's admin API). That is
+    # meaningless for every role except web: worker runs queue:work with no
+    # Caddy and nothing on 2019, so it would report `unhealthy` forever while
+    # working perfectly — and any depends_on: service_healthy on it would hang.
+    # Disabled here for all roles; `web` overrides it below with a real probe.
+    healthcheck:
+        disable: true
     depends_on:
         # `service_healthy`, not the default `service_started`. Postgres
         # accepts TCP connections seconds before it accepts QUERIES; without
@@ -74,9 +82,19 @@ services:
             # container and must re-read files the web container wrote;
             # container-local disk does not cross that boundary. In production
             # this same path is backed by S3/GCS via FILESYSTEM_DISK.
-            # Mounted at storage/app only — mounting all of storage/ would
-            # shadow the framework/ and logs/ trees the image creates.
-            - storage-data:/app/storage/app
+            #
+            # Mounted at the DISK ROOT's documents dir, not at storage/app.
+            # Two reasons, both learned the hard way:
+            #  1. Laravel's `local` disk root is storage_path('app/private'),
+            #     so uploads never landed in storage/app to begin with.
+            #  2. Docker populates an empty named volume from the image path on
+            #     first use. web and worker mount this volume and start
+            #     CONCURRENTLY, so both raced to copy storage/app/{private,
+            #     public} and one died with "mkdir .../private: file exists".
+            #     This directory is EMPTY in the image, so there is nothing to
+            #     copy and no race — while still being app-owned, which is what
+            #     gives the non-root runtime user write access to the volume.
+            - storage-data:/app/storage/app/private/documents
         healthcheck:
             # Laravel's built-in health endpoint, registered in bootstrap/app.php.
             # Needs curl in the runtime image — the Dockerfile must install it.
@@ -103,7 +121,7 @@ services:
             --max-time=3600
         # No `ports:` — the worker is unreachable from outside, by design.
         volumes:
-            - storage-data:/app/storage/app
+            - storage-data:/app/storage/app/private/documents
         # Graceful shutdown. queue:work traps SIGTERM and finishes the job in
         # hand rather than dying mid-call. The grace period MUST exceed the job
         # timeout (120s), or Docker SIGKILLs an in-flight OpenAI request during
@@ -186,7 +204,7 @@ services:
         command: >
             redis-server
             --appendonly yes
-            --requirepass ${REDIS_PASSWORD}
+            --requirepass ${REDIS_PASSWORD:?REDIS_PASSWORD must be set in .env (not empty, not the string null)}
         environment:
             # Present only so the healthcheck below can authenticate.
             REDIS_PASSWORD: ${REDIS_PASSWORD}

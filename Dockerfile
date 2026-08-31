@@ -156,6 +156,7 @@ COPY --from=assets /app/public/build ./public/build
 RUN mkdir -p \
         bootstrap/cache \
         storage/app/public \
+        storage/app/private/documents \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/testing \
@@ -206,6 +207,7 @@ COPY --from=assets /app/public/build ./public/build
 RUN mkdir -p \
         bootstrap/cache \
         storage/app/public \
+        storage/app/private/documents \
         storage/framework/cache/data \
         storage/framework/sessions \
         storage/framework/testing \
