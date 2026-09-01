@@ -57,6 +57,11 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
             ],
+
+            // Per-file upload rejections. Flashed by UploadDocuments so the
+            // list can show exactly which files were refused and why —
+            // a batch of twenty with one bad file still uploads nineteen.
+            'rejected' => fn () => $request->session()->get('rejected', []),
         ];
     }
 }

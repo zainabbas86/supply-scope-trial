@@ -39,6 +39,22 @@ class ExtractLabelData
 {
     use AsJob;
 
+    /*
+     * Constructor injection, NOT a second handle() argument.
+     *
+     * laravel-actions passes only the DISPATCH arguments to handle() — it does
+     * not resolve extra type-hinted dependencies from the container the way a
+     * controller action would. `handle(Document $d, LabelExtractor $e)` looks
+     * perfectly reasonable and fails at runtime with "Too few arguments".
+     *
+     * It survived the test suite because the tests called handle($doc, $fake)
+     * directly, supplying both arguments themselves and never exercising the
+     * real dispatch path. Only running a job through the queue caught it.
+     */
+    public function __construct(
+        private readonly LabelExtractor $extractor,
+    ) {}
+
     public function configureJob(JobDecorator $job): void
     {
         $job->onQueue(config('extraction.queue'))
@@ -100,7 +116,7 @@ class ExtractLabelData
         ];
     }
 
-    public function handle(Document $document, LabelExtractor $extractor): void
+    public function handle(Document $document): void
     {
         Log::withContext(['document_id' => $document->id]);
 
@@ -153,7 +169,7 @@ class ExtractLabelData
         try {
             $this->assertFileIsReadable($document);
 
-            $result = $extractor->extract($document);
+            $result = $this->extractor->extract($document);
 
             $this->persistSuccess($document, $result, $attemptNo, $startedAt);
 

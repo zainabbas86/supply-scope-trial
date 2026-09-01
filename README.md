@@ -200,6 +200,6 @@ tests instead.
 - [x] Upload and validation
 - [x] Queue, job and reliability
 - [x] LLM extraction layer
-- [ ] Frontend
+- [x] Frontend
 - [x] Tests
 - [ ] `DECISIONS.md`

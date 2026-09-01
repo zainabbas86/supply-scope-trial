@@ -12,6 +12,7 @@ use App\Models\Extraction;
 use App\Models\ExtractionAttempt;
 use App\Models\User;
 use App\Services\Extraction\LabelExtractor;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -40,7 +41,7 @@ function queuedDocument(array $attributes = []): Document
 function runJob(Document $document): ?Throwable
 {
     try {
-        app(ExtractLabelData::class)->handle($document, app(LabelExtractor::class));
+        app(ExtractLabelData::class)->handle($document);
 
         return null;
     } catch (Throwable $e) {
@@ -279,6 +280,43 @@ it('reports non-food products without inventing allergens', function () {
     expect($extraction->product_type->value)->toBe('non_food')
         ->and($extraction->allergenStatementStatus())->toBe('not_applicable')
         ->and($extraction->declaredAllergens())->toBe([]);
+});
+
+// -----------------------------------------------------------------------------
+// The real dispatch path
+// -----------------------------------------------------------------------------
+
+it('runs end to end when dispatched through the queue', function () {
+    /*
+     * Calls the job the way the WORKER does, not the way the other tests do.
+     *
+     * Every test above invokes handle() directly and passes its arguments, so
+     * they all passed while the job was undispatchable: handle() took a second
+     * LabelExtractor argument, and laravel-actions passes only the dispatch
+     * arguments — the real worker died with "Too few arguments to function
+     * handle(), 1 passed and exactly 2 expected".
+     *
+     * Convenient direct calls test the logic and skip the wiring. This one
+     * exercises the wiring, which is where that class of bug lives.
+     */
+    fakeExtractor(['success']);
+    $document = queuedDocument();
+
+    ExtractLabelData::dispatchSync($document);
+
+    $document->refresh();
+    expect($document->status)->toBe(DocumentStatus::Completed)
+        ->and($document->extraction)->not->toBeNull();
+});
+
+it('routes work to the dedicated extraction queue', function () {
+    Queue::fake();
+
+    ExtractLabelData::dispatch(Document::factory()->ownedBy($this->owner)->create());
+
+    // The worker container consumes only this queue; dispatching to `default`
+    // would leave the job sitting there forever, looking merely slow.
+    ExtractLabelData::assertPushedOn(config('extraction.queue'));
 });
 
 // -----------------------------------------------------------------------------

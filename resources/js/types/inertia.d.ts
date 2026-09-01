@@ -24,6 +24,11 @@ declare module '@inertiajs/core' {
                 success?: string;
                 error?: string;
             };
+            rejected: Array<{
+                filename: string;
+                code: string;
+                reason: string;
+            }>;
         };
     }
 }

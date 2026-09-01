@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Documents\UploadDocuments;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
+use App\Http\Controllers\DocumentController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
 /*
 |--------------------------------------------------------------------------
@@ -43,8 +43,21 @@ Route::middleware('auth')->group(function () {
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');
 
-    Route::get('/', fn () => Inertia::render('Documents/Index'))
+    Route::get('/', [DocumentController::class, 'index'])
         ->name('documents.index');
+
+    // Polled every 2.5s per open tab while anything is in flight, hence its own
+    // generous limiter — the default 60/min breaks with three tabs open.
+    Route::get('documents/status', [DocumentController::class, 'status'])
+        ->middleware('throttle:status')
+        ->name('documents.status');
+
+    Route::get('documents/{document}', [DocumentController::class, 'show'])
+        ->name('documents.show');
+
+    Route::post('documents/{document}/retry', [DocumentController::class, 'retry'])
+        ->middleware('throttle:upload')
+        ->name('documents.retry');
 
     // Throttled as a SPEND control, not a load control: every accepted file is
     // a vision-model call billed to the API key.

@@ -68,8 +68,15 @@ class Document extends Model
         return $this->hasOne(Extraction::class);
     }
 
-    /** Every attempt, successful or not. */
-    public function attempts(): HasMany
+    /**
+     * Every attempt, successful or not.
+     *
+     * NOT named `attempts`: `documents.attempts` is an integer count column,
+     * and Eloquent resolves an attribute before a relation of the same name.
+     * `$document->attempts` therefore returns the int, so a relation called
+     * `attempts` can be eager-loaded but never read — `->map()` on it fatals.
+     */
+    public function extractionAttempts(): HasMany
     {
         return $this->hasMany(ExtractionAttempt::class);
     }
