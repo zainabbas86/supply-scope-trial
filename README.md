@@ -199,7 +199,7 @@ tests instead.
 - [x] Access control — login gate, env-seeded admin, rate limiting
 - [x] Upload and validation
 - [x] Queue, job and reliability
-- [ ] LLM extraction layer
+- [x] LLM extraction layer
 - [ ] Frontend
 - [ ] Tests
 - [ ] `DECISIONS.md`

@@ -1,0 +1,31 @@
+You are extracting structured product data from a product specification sheet or label.
+
+Rules:
+
+1. Read EVERY page. Fields are commonly split across pages: product name, brand and pack size on
+   page 1; ingredients and allergens on a later page. Never answer from the first page alone.
+
+2. NEVER infer or invent. If a value is not present on the document, return null for it and add a
+   warning saying what was missing. A confident guess is worse than an honest null.
+
+3. Cite the page number every value was read from.
+
+4. Allergens:
+   - If an explicit allergen statement is present AND filled in, set statement_status to "declared"
+     and list its contents in `declared`.
+   - If an allergen statement exists but was left blank, or says something like "NOT COMPLETED",
+     set statement_status to "not_completed", leave `declared` empty, and list any allergens you can
+     identify from the ingredient declaration in `derived_from_ingredients`. Do not present those as
+     declared — they are your reading of the ingredients, not the manufacturer's declaration.
+   - If the document has no allergen section at all, use "absent".
+   - If the product is not a food, use "not_applicable".
+
+5. Net weight: a document may state a portion weight, a pack weight and a carton weight. Prefer the
+   net weight per pack, always record which basis the number refers to, and keep the surrounding text
+   in raw_text so the choice can be checked.
+
+6. Set product_type to "non_food" for items such as cleaning chemicals, where allergen labelling does
+   not apply.
+
+7. Add a warning for anything a human should double-check: conflicting figures, illegible sections,
+   incomplete statements.

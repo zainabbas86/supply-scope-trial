@@ -1,0 +1,304 @@
+{
+  "id": "resp_0fd96d7f2b5a6b56006a96c0068ee087d0882d870ef8cd8151",
+  "object": "response",
+  "created_at": 1788264455,
+  "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1788264464,
+  "error": null,
+  "frequency_penalty": 0.0,
+  "incomplete_details": null,
+  "instructions": null,
+  "max_output_tokens": null,
+  "max_tool_calls": null,
+  "model": "gpt-5.5-2026-04-23",
+  "moderation": null,
+  "output": [
+    {
+      "id": "rs_0fd96d7f2b5a6b56006a96c008aec887d099fed06f02a5321d",
+      "type": "reasoning",
+      "content": [],
+      "encrypted_content": "gAAAAABqlsAQtbSx5zBZASg_okonWARQ4pIhEJZp2mAV--0IMDTCso9FHSHyd619imky-3CazsDyqfBb50xIdex3lWJAJO1QPplQ3ghk6us6WRbHColX3mbULgz5vQZoZF0OrwOB2bOR9yps8bZCIWJVERfoa_A-XbJsy-jXt7y8sdKnT8SsXNk-j5571dXNPkcgFip6L4eOT8-wB1DOBbOOFqIRn0Qi0FvCKZjxsCL2V3ENvKC7ntNxrvZi8oW22QLX8sv6g8trLa5TaO3IzL8LzAjp6xrRkpB8H82LF08nbBjDvITPy3fzLVoGUs0SqvgycIXASHp8ltBDgXckP0D-dh_gnquuFNq6gHdSq6Stg9oKDJccOO3Ge960-qo5zT8Z1GjY9uRVnOg5lfeS-M-bT3yz95RJIOHTlDspq8VwfDi6kTJzDwaX4ozpP17x2ok8p1tcUrF2mC-glyZd2e1KDHNqNmSBThP326zZpb1-tjBwb1sjKqNEzPRnFPn54HNHLDGyvnMwDRpImbrV7IvhHvvxhSZ6mUQyAGXkxaCAJl3REeIqw-JDMikvcoL692MTefg-mpV2AHa39MB54e-rKoQeraIX01qnPs7jy4aMO5QN62WQqCgg0M2YTBgQDMakmUOTK2g2_7ExguTotQBhgWKdojn5BWJOONteJBkU3kn98qGtRoy-hspgOwHHxwBT1MSF9o6xJu7Hf_vfPSnuzxJ89igEOk3SWfR6-EJQjzAJn7eYvNZnUkbYpAVwAq9Z0SUbtRsuDdMNQMnOiEo9E0mA-o8yxYzbBYEtvFaQIbqkmi3gZHUgZIm064wtLhABX_3JsSWff8LqtFHKcfk9sJqRYImYfhk2BTlRVmpt9Y_Ax0iLWyn7ZoN-25ysvyPl_Fsh9G07KeIGIZVqknGdnXOH-7J-Ca5c9ba6BF1Hgna-TUB_nJrccljyoXJdIYeRtzrO9N6yPUIlfAwI2dS52D4RS2p7nIjvwJUNWsIqPCfpNaAL6hhNSnRj88As3VAnbXXzQST5F4ivC7--VB4kve4C57KAUSN_CbR6TGhfcsXdj0pSHffTcZqDd74ennjwDi3Pxn2TuV0qBrOTWnTa4VxxNUJbN7uP0E9M67_m93RTZ98bJN1nOblE-WwUjrSBzJOoAxo98MIAk6mZZMQBYU6T6_DYoUU7Ukvb-v-A8TPOWstz94KkZZOGUZZZZCgqXjN80CL80qBo8cPQ8UdioQqyCNsTES2HZws1hQybuGQonISyVZnjStIA2T9D4XNNGdVqv1dT07ZDsSn9lzK-irpwrJHVEwEBPfPw1c41SEI8xAs_qUpkjCSIsyWDRBOmXsClJ7t5ANgX70vFK7aiK4SmQiOvfMUmUbvZDoStT_OcJgUziNaCb0TQ1hUWVH2YgVNl0tu-PwRkMQUv1SwW83C_7wFxA5PVWS1NT1AG0Qg963gsmWFfssaWRG2xlXvbtuRCRSrgBts3gbIznl30xBgg4sSslqygcstfPrOSDtcyYQZiP5r_yP3WPtkHbiD0zrLwAEceumrF8hXBO7uA9MwWN1nO2P_G9oggICEdvJWE9bRIgPHUN5ddfWQYFrSlSQNJbg1Jc581VcHwjpU-AbzKYKoV4-bUe1x2dhDpUldErmyIhoxwSBF4a0WxWhpuutgqIYz6edk3KV1cqG8x20F8N1g0FSY6u4JjPWFa7p1pMEmQQGTa-I5qAyr2rei_p-WP95qp-tRnMt7xK5gHvzI1dgHGZdRZUqcHpbF-tiABGRTrhNbM8F8ZDJrWdhHowu5dR84uZn2osRTU9wp-qsMep3OAZt-986UZwEfxjR7Qw_C3nvJvGNsEZ4QgTR6lA4rBUTH5HSvZihPRhnrMZhNFrmrKMUfvL0NzDBB1o1dibNSXrNFnqcTyADiWQHzwf1cIBTwlUq4YM43SKKJNiDAitdratxUNnMVwTvfedWCjpt4R0wLjaEa0y5PMdVMXhne6lpB7p1yTmkIqaDcbvKq6QcwF6-gx1PQiFi3EST_EmLenQCvYzTK3viSJFnodZItkf4WdDQg7UW0rPIoE-BXhY6OStLkF_HS9Fpo9n0LFzaCb6gK9UeWLfzxLU5HStqcY_QyHZzBEGsjaQbIFlRQ5ErnSDAo6DsBZ3XI6Rr4SiqxqiqTph_41u1sHTKX2_bv2msuH-sKZ58mGxQA5JCXa23fRBSfNqda-hN7q9_LKbMJPoITmEDH1pdz2RV5Qpc5YpBLi3AQ52MnEaU6fIYYNPgwDEdwqrIy5pZzEp2loAeRfFlL8PYtpS99-w0rn9UR0dh4qFtG1dufdFSHGsSzcZcZ396K46Kt4G5o1uEswmeB1iW7RvQsIU38cInDawupCYWRUoZuX0o-CsHdUXQ8cRxqq5lUpUmFn8pY0F9nk3FmCTsAr4HsPgfnNxARq2U7FKSH59uiH_iDsw8j7QLVuNtJu83XReXznTWcuLJ_RiuObcTEE5j_yGiTZKSsroe0zAotx1zmDkjYhM0AUmVuAMLedRtEIJouYkk0lVlRX7A_9GBvt7wHqaz9pe85C0SEtzBluBcmKtQqbKZWQTqhfnn2D5wZePAw5pL5RQJCnNBc5XPmOMdVDgWDni9KRI9VgvhOUQWqMN7wbcasUqDwSonaykuf07aBC52LpMKufH0lwoXq8Cg5pvEP3vLpl-4EaGMpIAlP9aqU6Odu62FP-Ot82Ucsi9Sz0beGqkEMhp6GDMVL707h9NzXZlJKa5Ya6MNdXoZKlTYQBwjUeegmel3lhHDOcJ3bJ8JwhuXzqWi6jBJURnvAnMIH-OYhurvS0Pb9YKyiPioTu568sqDi-NMIum01o7QVxYvBawsiiLkxtXE9A5lCSvML8zZqDgDMUwdqmUKwfY9JEKGTiqKthfvOJxXdA94wqOINPBA67vJrqHQl_Z41OA2BkNb5QdyZKjAEeWAeQ-W5Hxi_aqQknThSBd2kXjYzLGjFTmBIhuazD__n8dI6CDhjP8nPixmMkuQH_es3x_vZ2moDvm3POot0gK5cYQpcC9O4a-CnUnm70tySVqtIq790kuFEW2fgvmdV1yY6BInqTxu4wh3iRsyYMk3tG0l3W4E2_5kTdFqEzuquflm_dhGUtsxJdxkfQsk62LyQU23EYx83aaT0xD4xj0BPE2MTHUECdTy9i2a-fni3LvzP2FESgHhnZ5kMXttRFWc51uUogsDcT4fLwUjNYxJe6duEzpJFzWLyX6rMK1Vk64Mtgk1Sm4OmeX65IlpN4VZdhHYCSE3RFF9G04BVeoFAcEKjyWlMIaMOV6cAuPlRr6lt3hFXgf17d5HSKNga2KKc9HyuIGKE6Xbr5WfD9hfr6Fg1_DI-HEMKony9ss_6Xpdh1vIFEIn0lG-wpcgv5CFBDgC8teL1D96LNS2R2e6s67fEsSzMUoW6UYqMBrbmA8yDF9NekH1quDZUJ83H9k9hYFo8iSQ0MoAtG6_pycFBxiuNJkY8FlvjM9O1ivfiaic2ZbPWa2TAlbkLFKXCsijxwiLlfw9dvD294h_-a6PelIWyLX4_ofBrolrOKeGaBgG1Hy4q9gpmAEZ-PTxB0g19zeNihymJQGnuj5THv6nRt7cCN-tJCNbz_RGK0sEPeI0ws3WOpZQaB-mTKnXyr4AQgaeem_0L2rqt4-lu8upaT5qfwgIwTbeaAMZmwQBQfAfcPKpiYEITOYmZLr1BpAC7DIWyBE3wWwn5rFm6kyA_7QJTsr0wvi5A99tX7LY7Sutgwwz4XvPhYKzxIC8MG1tuwojwSlja0lKXA_mnG19oaTFVvUkiTxq9NTzNlF0Pb7Nmtwh0kryxFs0Y91KdHiXcMlm2WLN3vErW9LgFZIYWtwKeG3guULsH7GrqJMt4FmNTTXAIrGk534_kAU-Rerv6mxlcqeve5xV7U5H2nYqK5MAg-aUhlmMDqaxdeNMNAPO1NNEwZsZSRn3lxirqtDEnZ-S288tJXbXlQrWhaSg==",
+      "summary": []
+    },
+    {
+      "id": "msg_0fd96d7f2b5a6b56006a96c00e485c87d09c7b298104ad8574",
+      "type": "message",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "annotations": [],
+          "logprobs": [],
+          "text": "{\"product_name\":{\"value\":\"Coldwater Bay – Fish – Fillets – Battered\",\"source_page\":1},\"brand\":{\"value\":\"Coldwater Bay\",\"source_page\":1},\"product_type\":\"food\",\"ingredients\":{\"raw_text\":\"Fish (Hoki) (58%), Water, Wheat Flour, Canola Oil, Maize Starch, Salt, Raising Agents (450, 500), Milk Solids, Dextrose, Yeast, Spice Extracts, Natural Colour (160b).\",\"items\":[\"Fish (Hoki) (58%)\",\"Water\",\"Wheat Flour\",\"Canola Oil\",\"Maize Starch\",\"Salt\",\"Raising Agents (450, 500)\",\"Milk Solids\",\"Dextrose\",\"Yeast\",\"Spice Extracts\",\"Natural Colour (160b)\"],\"source_page\":2},\"allergens\":{\"statement_status\":\"not_completed\",\"declared\":[],\"derived_from_ingredients\":[\"Fish\",\"Wheat\",\"Milk\"],\"source_page\":2},\"net_weight\":{\"value\":800,\"unit\":\"g\",\"basis\":\"per_pack\",\"raw_text\":\"NET Weight / Pack: 800 g; Pack size: 800g x 4 bags / carton\",\"source_page\":1},\"warnings\":[\"Allergen statement is marked \\\"VITAL NOT COMPLETED\\\" / \\\"Not completed\\\"; declared allergens are not available, so allergens listed are derived only from the ingredient declaration.\"],\"schema_version\":1}"
+        }
+      ],
+      "phase": "final_answer",
+      "role": "assistant"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "presence_penalty": 0.0,
+  "previous_response_id": null,
+  "prompt_cache_key": null,
+  "prompt_cache_retention": "24h",
+  "reasoning": {
+    "context": "current_turn",
+    "effort": "medium",
+    "mode": "standard",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
+  "store": true,
+  "temperature": 1.0,
+  "text": {
+    "format": {
+      "type": "json_schema",
+      "description": null,
+      "name": "label_extraction",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "product_name": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "source_page"
+            ],
+            "additionalProperties": false
+          },
+          "brand": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "source_page"
+            ],
+            "additionalProperties": false
+          },
+          "product_type": {
+            "type": "string",
+            "enum": [
+              "food",
+              "non_food",
+              "unknown"
+            ]
+          },
+          "ingredients": {
+            "type": "object",
+            "properties": {
+              "raw_text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "source_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "raw_text",
+              "items",
+              "source_page"
+            ],
+            "additionalProperties": false
+          },
+          "allergens": {
+            "type": "object",
+            "properties": {
+              "statement_status": {
+                "type": "string",
+                "enum": [
+                  "declared",
+                  "not_completed",
+                  "absent",
+                  "not_applicable"
+                ]
+              },
+              "declared": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "derived_from_ingredients": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "source_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "statement_status",
+              "declared",
+              "derived_from_ingredients",
+              "source_page"
+            ],
+            "additionalProperties": false
+          },
+          "net_weight": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "g",
+                  "kg",
+                  "ml",
+                  "L",
+                  "oz",
+                  "lb",
+                  null
+                ]
+              },
+              "basis": {
+                "type": "string",
+                "enum": [
+                  "per_pack",
+                  "per_portion",
+                  "per_carton",
+                  "unknown"
+                ]
+              },
+              "raw_text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_page": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "value",
+              "unit",
+              "basis",
+              "raw_text",
+              "source_page"
+            ],
+            "additionalProperties": false
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "schema_version": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "product_name",
+          "brand",
+          "product_type",
+          "ingredients",
+          "allergens",
+          "net_weight",
+          "warnings",
+          "schema_version"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    "verbosity": "medium"
+  },
+  "tool_choice": "auto",
+  "tool_usage": {
+    "image_gen": {
+      "input_tokens": 0,
+      "input_tokens_details": {
+        "image_tokens": 0,
+        "text_tokens": 0
+      },
+      "output_tokens": 0,
+      "output_tokens_details": {
+        "image_tokens": 0,
+        "text_tokens": 0
+      },
+      "total_tokens": 0
+    },
+    "web_search": {
+      "num_requests": 0
+    }
+  },
+  "tools": [],
+  "top_logprobs": 0,
+  "top_p": 0.98,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 3417,
+    "input_tokens_details": {
+      "cache_write_tokens": 0,
+      "cached_tokens": 0
+    },
+    "output_tokens": 807,
+    "output_tokens_details": {
+      "reasoning_tokens": 509
+    },
+    "total_tokens": 4224
+  },
+  "user": null,
+  "metadata": {}
+}

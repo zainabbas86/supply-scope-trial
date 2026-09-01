@@ -6,8 +6,8 @@ namespace App\Providers;
 
 use App\Models\Document;
 use App\Policies\DocumentPolicy;
-use App\Services\Extraction\FakeLabelExtractor;
 use App\Services\Extraction\LabelExtractor;
+use App\Services\Extraction\OpenAiLabelExtractor;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -18,11 +18,13 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        // §4 replaces this with OpenAiLabelExtractor. Every consumer depends on
-        // the interface, so that swap touches exactly one line — and the test
-        // suite keeps binding the fake, which is what guarantees no test ever
-        // reaches the network.
-        $this->app->bind(LabelExtractor::class, FakeLabelExtractor::class);
+        // The only line that names a concrete extractor. Everything else —
+        // the job, the tests, the retry logic — depends on the interface.
+        //
+        // Tests bind FakeLabelExtractor over this. The compose `test` service
+        // also blanks OPENAI_API_KEY, so a test that slipped through to the
+        // real client fails loudly on a 401 instead of quietly spending money.
+        $this->app->bind(LabelExtractor::class, OpenAiLabelExtractor::class);
     }
 
     public function boot(): void

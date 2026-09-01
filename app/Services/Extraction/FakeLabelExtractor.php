@@ -66,7 +66,8 @@ class FakeLabelExtractor implements LabelExtractor
     }
 
     /**
-     * Modelled on the real captured response for the coldwater-bay sample —
+     * MIRRORS the real captured response for the coldwater-bay sample
+     * (tests/Fixtures/openai/coldwater-bay-response.json) verbatim —
      * including the trap: the allergen statement was never completed, so the
      * allergens exist only as bold words inside the ingredient declaration.
      * A fake that returned tidy data would let a bug through that the real
@@ -82,8 +83,21 @@ class FakeLabelExtractor implements LabelExtractor
             brandPage: 1,
             productType: ProductType::Food,
             ingredients: [
-                'raw_text' => 'Alaska Pollock (Fish) 60%, Wheat Flour, Water, Milk Powder, Salt.',
-                'items' => ['Alaska Pollock', 'Wheat Flour', 'Water', 'Milk Powder', 'Salt'],
+                'raw_text' => 'Fish (Hoki) (58%), Water, Wheat Flour, Canola Oil, Maize Starch, Salt, Raising Agents (450, 500), Milk Solids, Dextrose, Yeast, Spice Extracts, Natural Colour (160b).',
+                'items' => [
+                    'Fish (Hoki) (58%)',
+                    'Water',
+                    'Wheat Flour',
+                    'Canola Oil',
+                    'Maize Starch',
+                    'Salt',
+                    'Raising Agents (450, 500)',
+                    'Milk Solids',
+                    'Dextrose',
+                    'Yeast',
+                    'Spice Extracts',
+                    'Natural Colour (160b)',
+                ],
                 'source_page' => 2,
             ],
             allergens: [
@@ -96,17 +110,18 @@ class FakeLabelExtractor implements LabelExtractor
                 'value' => 800,
                 'unit' => 'g',
                 'basis' => 'per_pack',
-                'raw_text' => 'NET Weight/Pack 800 g',
+                'raw_text' => 'NET Weight / Pack: 800 g; Pack size: 800g x 4 bags / carton',
                 'source_page' => 1,
             ],
-            warnings: ['Section 8 reads "ALLERGEN STATEMENT — VITAL NOT COMPLETED".'],
+            warnings: ['Allergen statement is marked "VITAL NOT COMPLETED" / "Not completed"; declared allergens are not available, so allergens listed are derived only from the ingredient declaration.'],
+            // ^ verbatim from the real captured response, not invented.
             raw: ['fake' => true],
             schemaVersion: (int) config('extraction.schema_version', 1),
             model: 'fake',
             promptVersion: (string) config('extraction.prompt_version', 'v1'),
-            inputTokens: 3191,
-            outputTokens: 837,
-            latencyMs: 18_000,
+            inputTokens: 3417,
+            outputTokens: 807,
+            latencyMs: 15_834,
         );
     }
 
