@@ -8,6 +8,7 @@ use App\Enums\DocumentStatus;
 use App\Jobs\ExtractLabelData;
 use App\Models\Document;
 use App\Support\CurrentOwner;
+use App\Support\DailySpendCeiling;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
@@ -115,6 +116,17 @@ class DocumentController extends Controller
     public function retry(Document $document): RedirectResponse
     {
         Gate::authorize('retry', $document);
+
+        // A retry is a fresh model call, so it spends from the same budget.
+        // Enforcing only at upload would leave an obvious way around the cap.
+        $ceiling = app(DailySpendCeiling::class);
+
+        if (! $ceiling->hasCapacity()) {
+            return back()->with(
+                'error',
+                "The daily extraction limit of {$ceiling->limit()} has been reached. Please try again tomorrow."
+            );
+        }
 
         // Back to `queued` so the job's atomic claim can take it. Resetting
         // the failure fields matters too — a stale reason next to a queued

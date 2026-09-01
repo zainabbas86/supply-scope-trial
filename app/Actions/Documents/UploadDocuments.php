@@ -10,6 +10,7 @@ use App\Jobs\ExtractLabelData;
 use App\Models\Document;
 use App\Models\User;
 use App\Support\CurrentOwner;
+use App\Support\DailySpendCeiling;
 use App\Support\PdfInspector;
 use finfo;
 use Illuminate\Database\Eloquent\Model;
@@ -39,6 +40,7 @@ class UploadDocuments
 
     public function __construct(
         private readonly PdfInspector $pdf,
+        private readonly DailySpendCeiling $ceiling,
     ) {}
 
     /**
@@ -72,6 +74,13 @@ class UploadDocuments
      */
     private function ingest(Model $owner, ?User $uploader, UploadedFile $file): array
     {
+        // Checked per file, not once per batch: a batch of twenty must stop
+        // at the ceiling rather than sail past it because the check happened
+        // before any of them were counted.
+        if (! $this->ceiling->hasCapacity()) {
+            throw FileRejected::dailyLimitReached($this->ceiling->limit());
+        }
+
         $this->assertUploadSucceeded($file);
         $extension = $this->assertAllowedExtension($file);
         $mime = $this->assertContentMatchesExtension($file, $extension);

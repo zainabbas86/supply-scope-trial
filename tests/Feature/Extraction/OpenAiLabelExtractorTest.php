@@ -222,6 +222,49 @@ it('gives up after one repair rather than looping', function () {
     expect(Http::recorded())->toHaveCount(2);
 });
 
+it('skips the repair when the job budget cannot fit a second call', function () {
+    /*
+     * The timeout ladder (http 90s < job 120s < retry_after 180s) was sized for
+     * ONE call. A repair makes two sequential calls in the same job, so two
+     * individually-legal calls can sum past the job timeout and get the job
+     * killed mid-repair — indistinguishable from a hang, and billed twice.
+     *
+     * With no budget left, the repair must be skipped rather than started.
+     */
+    config()->set('extraction.job_timeout', 5); // below the overhead margin
+
+    $broken = payloadOf($this->fixture);
+    $broken['net_weight']['value'] = -1;
+
+    Http::fake(['*' => Http::response(responseWith($this->fixture, $broken), 200)]);
+
+    try {
+        runExtractor();
+    } catch (TerminalExtractionException $e) {
+        expect($e->failureCode)->toBe('invalid_output')
+            ->and($e->getMessage())->toContain('too little of the job budget');
+    }
+
+    // One call, not two: the repair was never attempted.
+    expect(Http::recorded())->toHaveCount(1);
+});
+
+it('gives the repair only the time the job has left', function () {
+    // Not another full 90s allowance — what actually remains.
+    config()->set('extraction.job_timeout', 40);
+
+    $broken = payloadOf($this->fixture);
+    $broken['net_weight']['value'] = -1;
+
+    Http::fakeSequence()
+        ->push(responseWith($this->fixture, $broken), 200)
+        ->push($this->fixture, 200);
+
+    runExtractor();
+
+    expect(Http::recorded())->toHaveCount(2);
+});
+
 it('feeds the validation errors back into the repair prompt', function () {
     $broken = payloadOf($this->fixture);
     $broken['net_weight']['value'] = -1;

@@ -29,6 +29,16 @@ use JsonException;
  */
 class OpenAiLabelExtractor implements LabelExtractor
 {
+    /**
+     * Reserved for the parts of the job that are not the HTTP call: claiming
+     * the document, base64-encoding the file, validating, and the transaction
+     * that writes the result.
+     */
+    private const JOB_OVERHEAD_MS = 10_000;
+
+    /** Below this, a repair cannot realistically finish — so do not pay for one. */
+    private const MIN_REPAIR_MS = 15_000;
+
     public function __construct(
         private readonly ExtractionValidator $validator,
     ) {}
@@ -58,12 +68,38 @@ class OpenAiLabelExtractor implements LabelExtractor
              * an unbounded loop against a metered API is how a bug becomes an
              * invoice.
              */
+
+            /*
+             * Only attempt the repair if the JOB has time left for it.
+             *
+             * The timeout ladder (http 90s < job 120s < retry_after 180s) was
+             * sized for ONE call. A repair makes two sequential calls inside a
+             * single job execution, so two individually-legal calls — say 50s
+             * then 75s, both comfortably under the 90s cap — sum to 125s and
+             * the job is killed mid-repair. That is indistinguishable from a
+             * hang, wastes a retry, and pays for both calls: precisely the
+             * double-billing the ladder exists to prevent, one level up.
+             *
+             * So the repair gets whatever is actually left, and is skipped
+             * entirely when that is not enough to be worth starting.
+             */
+            $remainingMs = $this->remainingBudgetMs($startedAt);
+
+            if ($remainingMs < self::MIN_REPAIR_MS) {
+                throw TerminalExtractionException::invalidOutput(
+                    'Validation failed, and too little of the job budget remained to attempt a '
+                    .'repair: '.implode('; ', $errors),
+                    $response->json(),
+                );
+            }
+
             [$payload, $response] = $this->call(
                 $document,
                 $prompt."\n\nYour previous answer was rejected for these reasons:\n- "
                     .implode("\n- ", $errors)
                     ."\n\nReturn a corrected answer. Do not invent values to satisfy these rules; "
-                    .'use null and a warning where the document does not say.'
+                    .'use null and a warning where the document does not say.',
+                timeoutSeconds: (int) floor($remainingMs / 1000),
             );
 
             $errors = $this->validator->validate($payload, $document);
@@ -82,7 +118,7 @@ class OpenAiLabelExtractor implements LabelExtractor
     /**
      * @return array{0: array<string, mixed>, 1: Response}
      */
-    private function call(Document $document, string $prompt): array
+    private function call(Document $document, string $prompt, ?int $timeoutSeconds = null): array
     {
         $body = [
             'model' => (string) config('extraction.model'),
@@ -109,7 +145,9 @@ class OpenAiLabelExtractor implements LabelExtractor
                 // black-holed host consumes the whole 90s budget before the
                 // first byte; the job then times out with nothing to show.
                 ->connectTimeout((int) config('extraction.connect_timeout'))
-                ->timeout((int) config('extraction.timeout'))
+                // The repair pass passes a REDUCED timeout: what is left of
+                // the job budget, not another full per-call allowance.
+                ->timeout($timeoutSeconds ?? (int) config('extraction.timeout'))
                 ->acceptJson()
                 ->post(rtrim((string) config('extraction.base_url'), '/').'/responses', $body);
         } catch (ConnectionException $e) {
@@ -255,6 +293,17 @@ class OpenAiLabelExtractor implements LabelExtractor
         // attempt, so a bad batch of results can be traced to the prompt that
         // produced it. An inline string makes that impossible after an edit.
         return trim((string) file_get_contents($path));
+    }
+
+    /**
+     * How much of the job's timeout is left, less a margin for the work that
+     * is not the HTTP call.
+     */
+    private function remainingBudgetMs(int $startedAt): int
+    {
+        $budget = ((int) config('extraction.job_timeout') * 1000) - self::JOB_OVERHEAD_MS;
+
+        return max(0, $budget - $this->elapsedMs($startedAt));
     }
 
     private function elapsedMs(int $startedAt): int

@@ -89,6 +89,21 @@ class FileRejected extends RuntimeException
         );
     }
 
+    /**
+     * The daily extraction ceiling is spent.
+     *
+     * Rejected at upload rather than silently queued: a document that will not
+     * be processed until tomorrow should say so now, not sit at `queued`
+     * looking like it is about to run.
+     */
+    public static function dailyLimitReached(int $limit): self
+    {
+        return new self(
+            'daily_limit_reached',
+            "The daily extraction limit of {$limit} has been reached. Please try again tomorrow."
+        );
+    }
+
     public static function uploadFailed(): self
     {
         return new self('upload_failed', 'This file did not upload correctly. Please try again.');
