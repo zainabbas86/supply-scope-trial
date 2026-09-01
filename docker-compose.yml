@@ -157,6 +157,31 @@ services:
         restart: "no"
         environment:
             <<: *app-env
+
+            # This service inherits the production `.env` through env_file, and
+            # `.env` itself is absent from the image (.dockerignore), so the
+            # compose-injected environment is the ONLY source of config here.
+            #
+            # phpunit.xml's <env> entries cannot be relied on to correct that:
+            # PHPUnit will not override a variable that already exists unless
+            # forced, and even forced it did not reach the test process. The
+            # symptom was APP_ENV=local, which stops Laravel skipping CSRF —
+            # every login test came back "Page Expired" (419).
+            #
+            # So the service that injects production config also declares the
+            # test environment. Explicit beats clever.
+            APP_ENV: testing
+            APP_DEBUG: "true"
+            CACHE_STORE: array
+            SESSION_DRIVER: array
+            QUEUE_CONNECTION: sync
+            BCRYPT_ROUNDS: "4"
+
+            # A separate database: RefreshDatabase drops and re-migrates every
+            # table it can see, which against the dev database would be a very
+            # unpleasant surprise.
+            DB_DATABASE: label_extractor_test
+
             # Proves no test reaches the network: the suite must pass with the
             # key blank, which is only true if the extractor is faked.
             OPENAI_API_KEY: ""
@@ -181,6 +206,10 @@ services:
             - "${DB_PORT:-55432}:5432"
         volumes:
             - pgdata:/var/lib/postgresql/data
+            # Creates the separate test database on first init. Scripts in
+            # docker-entrypoint-initdb.d run ONCE, when the data volume is
+            # empty — an existing stack needs the database created by hand.
+            - ./docker/postgres/init-test-db.sql:/docker-entrypoint-initdb.d/init-test-db.sql:ro
         healthcheck:
             # pg_isready, not a TCP probe: it reports when the server will
             # actually answer queries, which is what depends_on needs to know.

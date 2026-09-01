@@ -20,7 +20,9 @@ return [
     */
 
     'admin' => [
-        'email' => env('ADMIN_EMAIL'),
+        // Stored in the `email` column (Laravel's auth convention) but treated
+        // as an opaque identifier — no address format is required or checked.
+        'username' => env('ADMIN_USERNAME'),
         'name' => env('ADMIN_NAME', 'Admin'),
         'password' => env('ADMIN_PASSWORD'),
         'min_password_length' => 12,

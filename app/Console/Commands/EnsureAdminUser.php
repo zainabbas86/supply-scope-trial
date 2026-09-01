@@ -31,13 +31,13 @@ class EnsureAdminUser extends Command
 
     public function handle(): int
     {
-        $email = config('access.admin.email');
+        $email = config('access.admin.username');
         $name = config('access.admin.name');
         $password = config('access.admin.password');
         $minLength = (int) config('access.admin.min_password_length');
 
         if (blank($email)) {
-            $this->components->warn('ADMIN_EMAIL is not set — no account created.');
+            $this->components->warn('ADMIN_USERNAME is not set — no account created.');
 
             // Not a failure: an environment without admin credentials is a
             // valid configuration (CI, the test image). Returning FAILURE here

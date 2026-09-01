@@ -31,8 +31,16 @@ class AuthenticatedSessionController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        // NOT validated as an email address. This is a single account
+        // provisioned from the environment, so the identifier is whatever the
+        // operator chose — 'admin' is perfectly reasonable. Demanding an
+        // RFC-valid address here adds friction and buys nothing: the only
+        // check that matters is whether the credentials match.
+        //
+        // The column is still called `email` because that is Laravel's auth
+        // convention and renaming it would mean a migration for no gain.
         $credentials = $request->validate([
-            'email' => ['required', 'string', 'email'],
+            'email' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string'],
         ]);
 

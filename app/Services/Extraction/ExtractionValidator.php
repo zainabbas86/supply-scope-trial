@@ -80,7 +80,21 @@ final class ExtractionValidator
             }
         }
 
-        $errors = array_values(Validator::make($payload, $rules)->errors()->all());
+        /*
+         * Custom attribute names that map each field to ITSELF.
+         *
+         * Laravel humanises attribute names by default, so `net_weight.value`
+         * becomes "net weight.value" in the message. That is fine for a form,
+         * and wrong here: these errors are fed straight back to the model as
+         * the repair prompt, and the model has to emit `net_weight.value`.
+         * Telling it about a "net weight.value field" makes the correction
+         * harder to act on for no reason.
+         */
+        $attributes = array_combine(array_keys($rules), array_keys($rules));
+
+        $errors = array_values(
+            Validator::make($payload, $rules, [], $attributes)->errors()->all()
+        );
 
         return [...$errors, ...$this->semanticErrors($payload)];
     }

@@ -18,17 +18,47 @@
         </include>
     </source>
     <php>
-        <env name="APP_ENV" value="testing"/>
-        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
-        <env name="BCRYPT_ROUNDS" value="4"/>
-        <env name="BROADCAST_CONNECTION" value="null"/>
-        <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!--
+            force="true" on EVERY value the suite depends on.
+
+            PHPUnit does not override an environment variable that already
+            exists unless forced. Locally nothing pre-sets these, so the values
+            here win and the suite passes. Inside the test container, compose
+            injects the real .env — CACHE_STORE=redis, SESSION_DRIVER=redis,
+            QUEUE_CONNECTION=redis — and every unforced value here is silently
+            ignored. Six auth tests passed on the host and failed in the
+            container for exactly that reason.
+
+            A test run must not depend on ambient environment.
+        -->
+        <env name="APP_ENV" value="testing" force="true"/>
+        <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
+        <env name="BCRYPT_ROUNDS" value="4" force="true"/>
+        <env name="BROADCAST_CONNECTION" value="null" force="true"/>
+        <env name="CACHE_STORE" value="array" force="true"/>
+        <!--
+            PostgreSQL, not SQLite in memory.
+
+            The schema leans on Postgres specifics that SQLite silently fakes:
+            jsonb columns degrade to text, and the UTF8 encoding assertion is
+            meaningless against a database that stores everything as UTF-8
+            regardless. Testing against the real driver is the only way those
+            assertions mean anything — and it is what the container does.
+
+            A SEPARATE database: RefreshDatabase drops and re-migrates every
+            table it can see, which against the development database would be
+            a very unpleasant surprise. force="true" so it also overrides the
+            DB_DATABASE that compose injects inside the test container.
+        -->
+        <env name="DB_CONNECTION" value="pgsql" force="true"/>
+        <env name="DB_DATABASE" value="label_extractor_test" force="true"/>
         <env name="DB_URL" value=""/>
-        <env name="MAIL_MAILER" value="array"/>
-        <env name="QUEUE_CONNECTION" value="sync"/>
-        <env name="SESSION_DRIVER" value="array"/>
+
+        <!-- No key: proves nothing in the suite reaches the real API. -->
+        <env name="OPENAI_API_KEY" value="" force="true"/>
+        <env name="MAIL_MAILER" value="array" force="true"/>
+        <env name="QUEUE_CONNECTION" value="sync" force="true"/>
+        <env name="SESSION_DRIVER" value="array" force="true"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

@@ -170,7 +170,7 @@ All configuration is environment-driven — no hostnames, ports or credentials a
 | `EXTRACTION_JOB_TIMEOUT` | Queue job timeout (120s), deliberately above the HTTP timeout. |
 | `UPLOAD_MAX_FILE_SIZE_KB` | Per-file upload cap. |
 | `UPLOAD_MAX_PDF_PAGES` | Page cap — a very long PDF is a latency and abuse vector. |
-| `ADMIN_EMAIL` / `ADMIN_NAME` | Identity of the single seeded account. |
+| `ADMIN_USERNAME` / `ADMIN_NAME` | Identity of the single seeded account. The username is an opaque identifier — it does not have to be an email address. |
 | `ADMIN_PASSWORD` | Seeded password, hashed on write. Leave unset and no account is created. |
 | `EXTRACTION_DAILY_LIMIT` | Hard ceiling on extractions per day — a spend control. |
 
@@ -201,5 +201,5 @@ tests instead.
 - [x] Queue, job and reliability
 - [x] LLM extraction layer
 - [ ] Frontend
-- [ ] Tests
+- [x] Tests
 - [ ] `DECISIONS.md`

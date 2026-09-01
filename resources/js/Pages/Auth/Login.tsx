@@ -45,11 +45,16 @@ export default function Login() {
                             htmlFor="email"
                             className="block text-sm font-medium text-neutral-700"
                         >
-                            Email
+                            Username
                         </label>
+                        {/* type="text", not "email": the account is provisioned
+                            from the environment and its identifier is whatever
+                            the operator chose (here, "admin"). type="email"
+                            makes the browser reject that before the request is
+                            even sent. */}
                         <input
                             id="email"
-                            type="email"
+                            type="text"
                             name="email"
                             value={data.email}
                             autoComplete="username"

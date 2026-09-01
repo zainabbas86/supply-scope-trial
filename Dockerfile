@@ -169,6 +169,16 @@ RUN mkdir -p \
         storage/framework/views \
         storage/logs
 
+# An empty .env.
+#
+# `.dockerignore` excludes the real one on purpose — secrets belong in the
+# runtime environment, never in an image layer — but Laravel's dotenv reader
+# still tries to open it and emits a PHP warning when it is missing. In the
+# test image that was 84 warnings, one per test, drowning anything real.
+#
+# Empty file, zero configuration: every value still comes from the environment.
+RUN touch .env
+
 # Now that the application source is present, generate the optimised autoloader
 # and run package:discover (the post-autoload-dump script skipped above).
 RUN composer dump-autoload --no-dev --optimize --no-interaction
@@ -219,6 +229,16 @@ RUN mkdir -p \
         storage/framework/testing \
         storage/framework/views \
         storage/logs
+
+# An empty .env.
+#
+# `.dockerignore` excludes the real one on purpose — secrets belong in the
+# runtime environment, never in an image layer — but Laravel's dotenv reader
+# still tries to open it and emits a PHP warning when it is missing. In the
+# test image that was 84 warnings, one per test, drowning anything real.
+#
+# Empty file, zero configuration: every value still comes from the environment.
+RUN touch .env
 
 RUN composer dump-autoload --optimize --no-interaction
 
