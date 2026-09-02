@@ -1,0 +1,147 @@
+name: CI
+
+# Every push and every pull request. The four gates below are the same four a
+# developer runs locally — if they pass here and fail there, the difference is
+# environment, and that is worth knowing immediately.
+on:
+    push:
+        branches: ['**']
+    pull_request:
+
+concurrency:
+    # A new push to the same branch cancels the previous run. Reviewing a stale
+    # red tick from two commits ago wastes more time than it saves.
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    backend:
+        name: Backend (Pint, PHPStan, Pest)
+        runs-on: ubuntu-latest
+
+        # Real Postgres and Redis, not SQLite in memory. The schema leans on
+        # jsonb and on UTF8 encoding; SQLite fakes both, which would make those
+        # assertions meaningless.
+        services:
+            postgres:
+                image: postgres:17
+                env:
+                    POSTGRES_DB: label_extractor_test
+                    POSTGRES_USER: label_extractor
+                    POSTGRES_PASSWORD: secret
+                ports: ['5432:5432']
+                options: >-
+                    --health-cmd="pg_isready -U label_extractor"
+                    --health-interval=5s --health-timeout=5s --health-retries=10
+
+            redis:
+                image: redis:7-alpine
+                ports: ['6379:6379']
+                options: >-
+                    --health-cmd="redis-cli ping"
+                    --health-interval=5s --health-timeout=5s --health-retries=10
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '8.4'
+                  extensions: pdo_pgsql, redis, gd, zip, pcntl, fileinfo
+                  coverage: none
+
+            - name: Cache composer packages
+              uses: actions/cache@v4
+              with:
+                  path: vendor
+                  key: composer-${{ hashFiles('composer.lock') }}
+
+            - run: composer install --no-interaction --prefer-dist --no-progress
+
+            - name: Prepare environment
+              run: |
+                  cp .env.example .env
+                  php artisan key:generate
+              env:
+                  # No key: the suite must pass without one, which is only true
+                  # if nothing reaches the real API.
+                  OPENAI_API_KEY: ''
+
+            - name: Pint (formatting)
+              run: ./vendor/bin/pint --test
+
+            - name: PHPStan (level 6)
+              run: ./vendor/bin/phpstan analyse --memory-limit=512M --no-progress
+
+            - name: Pest
+              run: ./vendor/bin/pest
+              env:
+                  DB_HOST: 127.0.0.1
+                  DB_PORT: 5432
+                  DB_DATABASE: label_extractor_test
+                  DB_USERNAME: label_extractor
+                  DB_PASSWORD: secret
+                  REDIS_HOST: 127.0.0.1
+                  REDIS_PORT: 6379
+                  REDIS_PASSWORD: ''
+                  OPENAI_API_KEY: ''
+
+    frontend:
+        name: Frontend (typecheck, Vitest, build)
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+                  cache: npm
+
+            - run: npm ci
+
+            # A SEPARATE gate from the build on purpose: esbuild strips types
+            # without checking them, so `npm run build` is green on code that
+            # does not type-check.
+            - name: Type check
+              run: npm run typecheck
+
+            - name: Vitest
+              run: npm run test
+
+            - name: Production build
+              run: npm run build
+
+    image:
+        name: Image builds and the suite runs inside it
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: docker/setup-buildx-action@v3
+
+            # The runtime image is the deployable artifact. Building it here
+            # catches Dockerfile breakage that the jobs above cannot see —
+            # notably anything case-sensitive, since the development machine is
+            # Windows and this is Linux.
+            - name: Build runtime image
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  target: runtime
+                  push: false
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+            # The test stage keeps dev dependencies; the runtime stage installs
+            # --no-dev and could not run a test if asked.
+            - name: Build test image
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  target: test
+                  push: false
+                  load: true
+                  tags: label-extractor:test
+                  cache-from: type=gha

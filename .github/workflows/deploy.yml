@@ -1,0 +1,146 @@
+name: Deploy
+
+# =============================================================================
+# Three environments: uat, staging, production.
+#
+# They differ ONLY in configuration. There is one image, built once and promoted
+# unchanged — the same artifact that passed CI is the artifact that reaches
+# production. Rebuilding per environment would mean the thing you tested is not
+# the thing you shipped.
+#
+# HONEST STATUS: nothing is hosted yet. Everything up to and including "publish
+# the image" runs for real today. The `Release` step in each environment is the
+# single place a host command goes, and it is deliberately left as one explicit
+# line rather than a plausible-looking script that does nothing — a deploy that
+# silently succeeds without deploying is worse than one that is obviously
+# unwired.
+# =============================================================================
+
+on:
+    workflow_dispatch:
+        inputs:
+            environment:
+                description: Target environment
+                required: true
+                default: uat
+                type: choice
+                options: [uat, staging, production]
+
+    # A version tag deploys production. Tagging is a deliberate act; pushing to
+    # a branch is not, and production should not move because someone merged.
+    push:
+        tags: ['v*']
+
+concurrency:
+    # One deploy per environment at a time, and NOT cancel-in-progress: killing
+    # a half-finished migration is worse than waiting for it.
+    group: deploy-${{ inputs.environment || 'production' }}
+    cancel-in-progress: false
+
+env:
+    REGISTRY: ghcr.io
+    IMAGE: ${{ github.repository }}
+
+jobs:
+    build:
+        name: Build and publish image
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            packages: write
+
+        outputs:
+            digest: ${{ steps.push.outputs.digest }}
+            tag: ${{ steps.meta.outputs.version }}
+
+        steps:
+            - uses: actions/checkout@v4
+            - uses: docker/setup-buildx-action@v3
+
+            - uses: docker/login-action@v3
+              with:
+                  registry: ${{ env.REGISTRY }}
+                  username: ${{ github.actor }}
+                  password: ${{ secrets.GITHUB_TOKEN }}
+
+            - id: meta
+              uses: docker/metadata-action@v5
+              with:
+                  images: ${{ env.REGISTRY }}/${{ env.IMAGE }}
+                  tags: |
+                      type=ref,event=tag
+                      type=sha,format=long
+
+            - id: push
+              uses: docker/build-push-action@v6
+              with:
+                  context: .
+                  target: runtime
+                  push: true
+                  tags: ${{ steps.meta.outputs.tags }}
+                  labels: ${{ steps.meta.outputs.labels }}
+                  cache-from: type=gha
+                  cache-to: type=gha,mode=max
+
+    deploy:
+        name: Deploy to ${{ inputs.environment || 'production' }}
+        needs: build
+        runs-on: ubuntu-latest
+
+        # GitHub Environments are doing real work here, not decoration:
+        #   - secrets are scoped per environment, so a UAT credential cannot be
+        #     read by a production job and vice versa;
+        #   - `production` can require a reviewer before the job starts;
+        #   - each deploy is recorded against its environment.
+        # Configure protection rules in Settings → Environments.
+        environment:
+            name: ${{ inputs.environment || 'production' }}
+            url: ${{ vars.APP_URL }}
+
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Show what is being deployed
+              run: |
+                  echo "environment : ${{ inputs.environment || 'production' }}"
+                  echo "image       : ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.build.outputs.tag }}"
+                  echo "digest      : ${{ needs.build.outputs.digest }}"
+
+            # -----------------------------------------------------------------
+            # Release steps, in the order they must run.
+            #
+            # Migrations run ONCE, as a release command, before the new image
+            # takes traffic — never on container boot, which races across
+            # replicas. `app:ensure-admin` is idempotent and safe to re-run.
+            #
+            # The one line to fill in per host:
+            #   Fly.io    flyctl deploy --image $IMAGE --app $FLY_APP
+            #   Render    curl -X POST "$RENDER_DEPLOY_HOOK"
+            #   Cloud Run gcloud run deploy $SERVICE --image $IMAGE
+            # -----------------------------------------------------------------
+            - name: Release
+              env:
+                  IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.build.outputs.digest }}
+                  # Per-environment secrets, set in Settings → Environments.
+                  DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+              run: |
+                  if [ -z "${DEPLOY_TOKEN}" ]; then
+                    echo "::error::No DEPLOY_TOKEN configured for this environment."
+                    echo "The image is published and ready at: ${IMAGE}"
+                    echo "Add the host command to this step and set DEPLOY_TOKEN"
+                    echo "under Settings → Environments to complete the deploy."
+                    exit 1
+                  fi
+
+                  echo "::error::Deploy target not yet configured."
+                  echo "Add the provider command for this environment here."
+                  exit 1
+
+            # Runs only once the Release step above is wired up and succeeds.
+            - name: Smoke test
+              if: success()
+              run: |
+                  # A deploy that reports success without the app answering is
+                  # not a success. /up is Laravel's health endpoint.
+                  curl --fail --silent --show-error --retry 5 --retry-delay 5 \
+                       "${{ vars.APP_URL }}/up"

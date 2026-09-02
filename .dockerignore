@@ -2,6 +2,7 @@ supply_scope_docs
 node_modules
 vendor
 .git
+.github
 .omc
 bootstrap/cache/*
 storage/logs/*

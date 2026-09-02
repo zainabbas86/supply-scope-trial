@@ -237,6 +237,27 @@ composer lint                  # Pint
 The suite runs in a dedicated `test` image stage — the runtime image installs `--no-dev`, so
 it has neither Pest nor PHPUnit and could not run a test if asked.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request, in three parallel jobs:
+
+| Job | Gates |
+|---|---|
+| **backend** | Pint, PHPStan level 6, Pest — against real Postgres and Redis service containers |
+| **frontend** | `tsc --noEmit`, Vitest, production build |
+| **image** | Builds the `runtime` and `test` stages |
+
+The image job earns its place: it is the only gate that runs on **Linux with a
+case-sensitive filesystem**. Development here is on Windows, where a case-only path
+difference resolves silently and then fails in the container — which has already happened
+once, with `resources/js/Pages` versus the lowercase `pages` that inertia-laravel expects.
+
+`.github/workflows/deploy.yml` builds the image **once** and promotes that same artifact to
+`uat`, `staging` or `production` — the thing that passed CI is the thing that ships.
+Environments are GitHub Environments, so secrets are scoped per environment and production
+can require an approving reviewer. Production deploys on a version tag; the others are
+manual.
+
 ## Deployment
 
 **Nothing is currently hosted.** Deploy-readiness was still a hard design goal, so what
@@ -248,6 +269,12 @@ service and one worker service **from the same image**, managed Postgres and Red
 GCS for `FILESYSTEM_DISK`, and migrations as a release command. Nothing is hardcoded, logs
 go to stdout, and `config:cache` is deliberately not run at build time — that would bake
 build-time environment values into the image.
+
+The deploy workflow is wired as far as it honestly can be without a host: it builds and
+publishes the image to GHCR for real, and each environment has a single explicit `Release`
+step where the provider command goes (`flyctl deploy --image …`, a Render deploy hook, or
+`gcloud run deploy`). That step **fails loudly rather than reporting a success it did not
+achieve** — a green deploy that deployed nothing is worse than an obvious red one.
 
 Still required before a real deployment: a secret store rather than environment strings, a
 readiness probe that checks Postgres and Redis rather than only liveness, and somewhere for
@@ -268,7 +295,6 @@ Scope was traded deliberately, to spend the time on failure handling and tests i
 | **Multi-model routing / fallback** | One model, recorded per attempt so a change is attributable. A fallback chain doubles the failure surface for a case that has not occurred. |
 | **Versioned extraction history** | One row per document; re-running replaces it. Better for auditing prompt changes, but a column and a scope away when needed. |
 | **Playwright E2E** | Component tests cover the UI states and feature tests cover the routes. E2E would mostly re-test what those already do. |
-| **CI pipeline** | The four gates above are the whole job — `pint --test`, `phpstan`, `docker compose run --rm test`, `npm run test`. |
 | **i18n** | Single locale. Messages are literal strings rather than translation keys, which is why they read as sentences. |
 
 Two smaller things, named so they read as decisions rather than oversights:

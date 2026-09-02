@@ -169,6 +169,11 @@ configuration rather than architecture.
 
 The image and Compose file map 1:1 onto Fly.io, Render, Railway or Cloud Run:
 
+CI runs the four gates on every push (`.github/workflows/ci.yml`), and a separate deploy
+workflow builds the image once and promotes that same artifact through `uat`, `staging` and
+`production`. Rebuilding per environment would mean the thing that was tested is not the
+thing that shipped.
+
 | Compose | Managed equivalent |
 |---|---|
 | `web` | one web service, same image |
