@@ -25,6 +25,7 @@ abstract class ExtractionException extends RuntimeException
         public readonly string $userMessage,
         string $technicalMessage,
         public readonly ?int $httpStatus = null,
+        /** @var array<string, mixed>|null */
         public readonly ?array $rawResponse = null,
     ) {
         parent::__construct($technicalMessage);

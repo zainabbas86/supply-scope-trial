@@ -14,10 +14,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * The structured result of a successful extraction. One row per document.
  *
+ * @property string $id
+ * @property string $document_id
+ * @property int $schema_version
+ * @property string|null $product_name
+ * @property int|null $product_name_page
+ * @property string|null $brand
+ * @property int|null $brand_page
  * @property ProductType $product_type
- * @property array|null $ingredients
- * @property array|null $allergens
- * @property array|null $net_weight
+ * @property array<string, mixed>|null $ingredients
+ * @property array<string, mixed>|null $allergens
+ * @property array<string, mixed>|null $net_weight
+ * @property list<string>|null $warnings
+ * @property array<string, mixed>|null $raw_response
  */
 class Extraction extends Model
 {
@@ -43,6 +52,7 @@ class Extraction extends Model
         ];
     }
 
+    /** @return BelongsTo<Document, $this> */
     public function document(): BelongsTo
     {
         return $this->belongsTo(Document::class);
@@ -70,13 +80,21 @@ class Extraction extends Model
         return $this->allergenStatementStatus() === 'not_completed';
     }
 
-    /** Allergens from an explicit statement. @return list<string> */
+    /**
+     * Allergens from an explicit statement.
+     *
+     * @return list<string>
+     */
     public function declaredAllergens(): array
     {
         return $this->allergens['declared'] ?? [];
     }
 
-    /** Allergens inferred from the ingredient text — NOT a declaration. @return list<string> */
+    /**
+     * Allergens inferred from the ingredient text — NOT a declaration.
+     *
+     * @return list<string>
+     */
     public function derivedAllergens(): array
     {
         return $this->allergens['derived_from_ingredients'] ?? [];

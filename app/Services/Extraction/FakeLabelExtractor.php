@@ -163,7 +163,11 @@ class FakeLabelExtractor implements LabelExtractor
         );
     }
 
-    /** Convenience for tests: bind a scripted fake into the container. */
+    /**
+     * Convenience for tests: bind a scripted fake into the container.
+     *
+     * @param  list<Throwable|string>  $script
+     */
     public static function script(array $script): self
     {
         $fake = new self;

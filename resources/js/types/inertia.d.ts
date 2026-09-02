@@ -29,6 +29,12 @@ declare module '@inertiajs/core' {
                 code: string;
                 reason: string;
             }>;
+            uploaded: Array<{
+                id: string;
+                filename: string;
+                status: string;
+                duplicate_of_existing: boolean;
+            }>;
         };
     }
 }

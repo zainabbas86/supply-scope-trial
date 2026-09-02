@@ -46,7 +46,11 @@ final readonly class ExtractionResult
         public ?int $latencyMs = null,
     ) {}
 
-    /** Columns for the `extractions` table. @return array<string, mixed> */
+    /**
+     * Columns for the `extractions` table.
+     *
+     * @return array<string, mixed>
+     */
     public function toExtractionAttributes(): array
     {
         return [

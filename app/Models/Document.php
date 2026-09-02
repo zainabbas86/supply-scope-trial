@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Enums\DocumentStatus;
 use Database\Factories\DocumentFactory;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -14,12 +15,38 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 
 /**
  * An uploaded label or specification sheet.
  *
+ * Property annotations are not decoration: Larastan cannot infer column types
+ * from a migration, so without them every `$document->sha256` is `mixed` and
+ * level 6 has nothing to check.
+ *
  * @property string $id
+ * @property string $owner_type
+ * @property int|string $owner_id
+ * @property int|null $uploaded_by_user_id
+ * @property string $original_filename
+ * @property string $mime_type
+ * @property int $size_bytes
+ * @property string $sha256
+ * @property int|null $page_count
+ * @property string $disk
+ * @property string $storage_path
  * @property DocumentStatus $status
+ * @property string|null $failure_code
+ * @property string|null $failure_reason
+ * @property int $attempts
+ * @property Carbon|null $queued_at
+ * @property Carbon|null $started_at
+ * @property Carbon|null $finished_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
+ * @property-read Extraction|null $extraction
+ * @property-read Collection<int, ExtractionAttempt> $extractionAttempts
+ * @property-read User|null $uploadedBy
  */
 class Document extends Model
 {
@@ -51,18 +78,21 @@ class Document extends Model
     // -----------------------------------------------------------------------
 
     /** Polymorphic: a User today, potentially a Tenant later. */
+    /** @return MorphTo<Model, $this> */
     public function owner(): MorphTo
     {
         return $this->morphTo();
     }
 
     /** Who physically uploaded it — may differ from the owner under tenancy. */
+    /** @return BelongsTo<User, $this> */
     public function uploadedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'uploaded_by_user_id');
     }
 
     /** The successful result, if there is one. */
+    /** @return HasOne<Extraction, $this> */
     public function extraction(): HasOne
     {
         return $this->hasOne(Extraction::class);
@@ -76,6 +106,7 @@ class Document extends Model
      * `$document->attempts` therefore returns the int, so a relation called
      * `attempts` can be eager-loaded but never read — `->map()` on it fatals.
      */
+    /** @return HasMany<ExtractionAttempt, $this> */
     public function extractionAttempts(): HasMany
     {
         return $this->hasMany(ExtractionAttempt::class);
@@ -94,6 +125,9 @@ class Document extends Model
      * would silently match nothing and the job would fail to find its own
      * document — presenting as a queue bug. Authorisation on single records is
      * the policy's job; this is for list queries.
+     *
+     * @param  Builder<Document>  $query
+     * @return Builder<Document>
      */
     public function scopeForOwner(Builder $query, Model $owner): Builder
     {
@@ -101,7 +135,12 @@ class Document extends Model
             ->where('owner_id', $owner->getKey());
     }
 
-    /** Queued or processing — what the UI polls for. */
+    /**
+     * Queued or processing — what the UI polls for.
+     *
+     * @param  Builder<Document>  $query
+     * @return Builder<Document>
+     */
     public function scopeInFlight(Builder $query): Builder
     {
         return $query->whereIn('status', [

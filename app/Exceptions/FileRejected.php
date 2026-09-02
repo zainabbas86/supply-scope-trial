@@ -39,6 +39,7 @@ class FileRejected extends RuntimeException
         return new self('file_too_large', "This file is larger than the {$mb} MB limit.");
     }
 
+    /** @param list<string> $allowed */
     public static function unsupportedExtension(string $extension, array $allowed): self
     {
         $list = implode(', ', $allowed);

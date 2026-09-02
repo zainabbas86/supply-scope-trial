@@ -1,0 +1,65 @@
+# =============================================================================
+# Development overrides — applied automatically by `docker compose up`.
+#
+# The base compose file describes the DEPLOYED shape: code baked into an
+# immutable image, assets pre-built, nothing mounted. That is the contract, and
+# it is what CI and a real deploy use.
+#
+# This file trades that immutability for a fast edit loop, and nothing else.
+# `docker compose -f docker-compose.yml up` (without this file) still gives the
+# production shape, which is what you want when verifying a build.
+#
+# Delete-safe: the stack runs correctly without it.
+# =============================================================================
+
+services:
+    web:
+        # Bind-mount the source so an edit is live without rebuilding a layer.
+        volumes:
+            - ./app:/app/app
+            - ./bootstrap:/app/bootstrap
+            - ./config:/app/config
+            - ./database:/app/database
+            - ./resources:/app/resources
+            - ./routes:/app/routes
+            - ./tests:/app/tests
+            - ./public:/app/public
+            # NOT vendor/ or node_modules/: bind-mounting either on Windows is
+            # painfully slow, and the image's copies are already correct for the
+            # container's platform. A host `vendor/` built on Windows can also
+            # carry platform-specific artefacts that do not belong in Linux.
+            #
+            # The shared storage volume is still declared here because a bind
+            # mount list REPLACES the base one rather than merging with it —
+            # omit this and the worker silently loses access to uploads.
+            - storage-data:/app/storage/app/private/documents
+
+        environment:
+            # Surface errors in the browser instead of a blank 500.
+            APP_DEBUG: "true"
+            LOG_LEVEL: debug
+
+    worker:
+        volumes:
+            - ./app:/app/app
+            - ./bootstrap:/app/bootstrap
+            - ./config:/app/config
+            - ./database:/app/database
+            - ./resources:/app/resources
+            - ./routes:/app/routes
+            - storage-data:/app/storage/app/private/documents
+
+        # queue:work loads the application ONCE and keeps it in memory, so a
+        # bind-mounted change is invisible until the worker restarts. --max-time
+        # recycles it every 60s in development so edits land without a manual
+        # `docker compose restart worker` every time.
+        command: >
+            php artisan queue:work
+            --queue=${EXTRACTION_QUEUE:-extraction}
+            --tries=${EXTRACTION_MAX_TRIES:-3}
+            --timeout=${EXTRACTION_JOB_TIMEOUT:-120}
+            --max-time=60
+
+        environment:
+            APP_DEBUG: "true"
+            LOG_LEVEL: debug

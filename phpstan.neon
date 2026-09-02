@@ -1,0 +1,21 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    paths:
+        - app
+        - database
+        - config
+        - routes
+
+    # Level 6 requires type hints on everything the analyser can reach — it is
+    # the level at which "this array might not have that key" and "this method
+    # can return null" become errors rather than assumptions. Higher levels
+    # start fighting Eloquent's magic for diminishing returns on a codebase
+    # this size.
+    level: 6
+
+    # Eloquent's magic properties are resolved by the Larastan extension, but
+    # only where a model is statically known. Where it is not, the alternative
+    # to this is scattering @var annotations that document nothing.
+    checkModelProperties: true

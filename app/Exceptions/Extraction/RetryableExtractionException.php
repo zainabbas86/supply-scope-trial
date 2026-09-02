@@ -13,6 +13,7 @@ namespace App\Exceptions\Extraction;
  */
 class RetryableExtractionException extends ExtractionException
 {
+    /** @param array<string, mixed>|null $raw */
     public static function rateLimited(?int $retryAfter = null, ?array $raw = null): self
     {
         return new self(
@@ -24,6 +25,7 @@ class RetryableExtractionException extends ExtractionException
         );
     }
 
+    /** @param array<string, mixed>|null $raw */
     public static function serverError(int $status, ?array $raw = null): self
     {
         return new self(

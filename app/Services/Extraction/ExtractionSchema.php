@@ -115,7 +115,11 @@ final class ExtractionSchema
         ];
     }
 
-    /** The `text.format` block for the Responses API. @return array<string, mixed> */
+    /**
+     * The `text.format` block for the Responses API.
+     *
+     * @return array<string, mixed>
+     */
     public static function responseFormat(): array
     {
         return [
@@ -131,7 +135,11 @@ final class ExtractionSchema
         ];
     }
 
-    /** A value plus the page it was read from. @return array<string, mixed> */
+    /**
+     * A value plus the page it was read from.
+     *
+     * @return array<string, mixed>
+     */
     private static function cited(string $type): array
     {
         return [

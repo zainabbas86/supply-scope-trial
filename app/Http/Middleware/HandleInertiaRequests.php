@@ -62,6 +62,12 @@ class HandleInertiaRequests extends Middleware
             // list can show exactly which files were refused and why —
             // a batch of twenty with one bad file still uploads nineteen.
             'rejected' => fn () => $request->session()->get('rejected', []),
+
+            // Accepted files, including any that were deduplicated. Written by
+            // UploadDocuments and previously flashed but never read — so a
+            // successful upload said nothing at all, and a deduplicated one
+            // appeared instantly complete with no explanation.
+            'uploaded' => fn () => $request->session()->get('uploaded', []),
         ];
     }
 }

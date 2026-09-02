@@ -20,7 +20,12 @@ class UserFactory extends Factory
     /**
      * Define the model's default state.
      *
-     * @return array<string, mixed>
+     * Laravel's own stub annotates this `array<string, mixed>`, which is WIDER
+     * than the parent's `array<model-property<TModel>, mixed>` and so fails a
+     * level-6 check. Narrowing it restores the guarantee the parent makes:
+     * the keys are real model attributes, not arbitrary strings.
+     *
+     * @return array<model-property<User>, mixed>
      */
     public function definition(): array
     {

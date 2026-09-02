@@ -13,6 +13,7 @@ namespace App\Exceptions\Extraction;
  */
 class TerminalExtractionException extends ExtractionException
 {
+    /** @param array<string, mixed>|null $raw */
     public static function badRequest(string $detail, ?array $raw = null): self
     {
         return new self(
@@ -49,6 +50,7 @@ class TerminalExtractionException extends ExtractionException
      * call succeeded — so it must be recognised explicitly, or it looks like a
      * malformed response and gets pointlessly retried.
      */
+    /** @param array<string, mixed>|null $raw */
     public static function refused(string $reason, ?array $raw = null): self
     {
         return new self(
@@ -65,6 +67,7 @@ class TerminalExtractionException extends ExtractionException
      * repair attempt. Terminal by design: a second repair round would be an
      * unbounded loop against a model that is not converging.
      */
+    /** @param array<string, mixed>|null $raw */
     public static function invalidOutput(string $detail, ?array $raw = null): self
     {
         return new self(

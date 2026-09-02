@@ -17,6 +17,8 @@ export default function Index({ documents, maxFiles, maxFileSizeMb }: Props) {
     const [rows, setRows] = useState(documents);
     const { flash } = usePage().props;
     const rejected = (usePage().props.rejected ?? []) as RejectedFile[];
+    const uploaded = usePage().props.uploaded ?? [];
+    const duplicates = uploaded.filter((f) => f.duplicate_of_existing);
 
     // Inertia keeps the component mounted across visits, so the local copy has
     // to follow the server's when a new page of props arrives.
@@ -60,6 +62,20 @@ export default function Index({ documents, maxFiles, maxFileSizeMb }: Props) {
             <Head title="Documents" />
 
             <FileDropzone maxFiles={maxFiles} maxFileSizeMb={maxFileSizeMb} />
+
+            {/* A deduplicated upload would otherwise appear instantly complete
+                with no explanation, which reads like a bug. Saying so also
+                surfaces the cost saving as a feature rather than hiding it. */}
+            {duplicates.length > 0 && (
+                <div
+                    role="status"
+                    className="mt-4 rounded-md border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900"
+                >
+                    {duplicates.length === 1
+                        ? `${duplicates[0].filename} had already been extracted, so the existing result was reused.`
+                        : `${duplicates.length} files had already been extracted, so their existing results were reused.`}
+                </div>
+            )}
 
             {/* Rejected files are reported per file, with the server's reason.
                 A batch of twenty with one bad file still uploads nineteen. */}
