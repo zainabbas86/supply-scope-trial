@@ -6,11 +6,6 @@ field by field, with the page each value came from.
 
 Built for SupplyScope's Stage-1 developer trial.
 
-> **Status: in active development.** The sections marked 🚧 below are filled in as the build
-> progresses. See [Build status](#build-status) for what currently works.
-
----
-
 ## What it does
 
 1. You sign in. There is no public access and no self-registration — see
@@ -152,7 +147,43 @@ Only the login page and the `/up` health endpoint are public.
 
 ## Getting started
 
-🚧 *Filled in once the container layer is complete.*
+Docker is the only requirement — no PHP, Node, Postgres or Redis on the host.
+
+```bash
+cp .env.example .env          # set OPENAI_API_KEY, ADMIN_PASSWORD, DB/REDIS passwords
+docker compose up -d          # postgres, redis, web, worker
+docker compose run --rm migrate
+docker compose run --rm web php artisan app:ensure-admin
+```
+
+Then open **http://localhost:8080** and sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+
+Three things worth knowing before the first run:
+
+- **`ADMIN_PASSWORD` has no default.** Leave it unset and `app:ensure-admin` creates
+  *nothing* and says so. A guessable fallback on a reachable host is worse than no way in.
+  Minimum 12 characters; the command fails loudly on a shorter one.
+- **`REDIS_PASSWORD` must be a real value, never the literal `null`.** Compose passes it
+  verbatim to `redis-server --requirepass`, while PHP dotenv converts an unquoted `null` to
+  PHP `null` — so Redis demands a password Laravel never sends. Compose refuses to start if
+  it is unset.
+- **Port 8080, not 80.** The container runs as a non-root user, which cannot bind a
+  privileged port. Change `APP_PORT` if 8080 is taken, and keep `APP_URL` in step.
+
+Migrations run **explicitly**, never on container boot — several replicas booting together
+would race them against each other.
+
+### Development
+
+```bash
+docker compose up -d          # docker-compose.override.yml bind-mounts the source
+npm run dev                   # Vite, for frontend work
+docker compose logs -f worker # follow extractions
+```
+
+`docker-compose.override.yml` is applied automatically and trades the image immutability
+for a fast edit loop. To run the *deployed* shape — code baked in, nothing mounted — use
+`docker compose -f docker-compose.yml up`.
 
 ## Configuration
 
@@ -176,19 +207,76 @@ All configuration is environment-driven — no hostnames, ports or credentials a
 
 ## Testing
 
-🚧 *Filled in at the testing stage.*
+```bash
+docker compose run --rm test   # 102 PHP tests, in the image, against real Postgres
+npm run test                   # 36 component tests (Vitest + Testing Library)
+npm run typecheck              # tsc --noEmit — SEPARATE from build, see below
+composer analyse               # PHPStan level 6
+composer lint                  # Pint
+```
+
+**138 tests in total**, built to fail for the right reasons:
+
+- **Real PostgreSQL, not SQLite in memory.** SQLite fakes `jsonb` as text and stores
+  everything UTF-8 regardless, which would make both of those assertions meaningless. Tests
+  use a separate `label_extractor_test` database — `RefreshDatabase` drops every table it
+  can see, which against the development database would be an unpleasant surprise.
+- **No test reaches the network.** A scriptable `FakeLabelExtractor` is bound in place of
+  the OpenAI client, and `OPENAI_API_KEY` is blanked in the test environment — so a test
+  that somehow escaped the fake fails loudly on a 401 rather than quietly spending money.
+- **The provider client is still tested**, against a **real captured `gpt-5.5` response**
+  recorded live and committed as a fixture. A hand-written fixture only proves the code
+  agrees with my own assumptions about the API.
+- **Failure paths, not happy paths.** Retry-then-succeed, terminal-without-retrying,
+  idempotency, concurrent workers, malformed and truncated and refused model output,
+  cross-owner isolation, and content-sniffed upload rejection.
+- **`npm run build` does not type-check.** esbuild strips types without checking them, so a
+  build can be green on code that does not compile. `typecheck` is a separate gate, and the
+  Docker `assets` stage runs it before building.
+
+The suite runs in a dedicated `test` image stage — the runtime image installs `--no-dev`, so
+it has neither Pest nor PHPUnit and could not run a test if asked.
 
 ## Deployment
 
-🚧 *Filled in once the container layer is complete.*
+**Nothing is currently hosted.** Deploy-readiness was still a hard design goal, so what
+remains is configuration rather than architecture — see
+[DECISIONS.md §4](DECISIONS.md#4-deployment-posture) for the detail.
 
-Nothing is currently hosted, but deploy-readiness is a hard design goal: the stack is containerised
-and twelve-factor throughout, so hosting it is a configuration exercise rather than a rewrite.
+The image and Compose file map 1:1 onto Fly.io, Render, Railway or Cloud Run: one web
+service and one worker service **from the same image**, managed Postgres and Redis, S3 or
+GCS for `FILESYSTEM_DISK`, and migrations as a release command. Nothing is hardcoded, logs
+go to stdout, and `config:cache` is deliberately not run at build time — that would bake
+build-time environment values into the image.
+
+Still required before a real deployment: a secret store rather than environment strings, a
+readiness probe that checks Postgres and Redis rather than only liveness, and somewhere for
+logs and queue-depth metrics to go.
 
 ## What was cut, and why
 
-🚧 *Filled in at the end.* Scope was deliberately traded to spend the time on failure handling and
-tests instead.
+Scope was traded deliberately, to spend the time on failure handling and tests instead.
+
+| Cut | Why, and what I would do instead |
+|---|---|
+| **Hosting it** | Optional in the brief. The stack is deploy-ready; hosting is configuration, and the login gate exists precisely so it *could* be hosted safely. |
+| **Organisation-level tenancy** | Per-user ownership ships. The schema is polymorphic and every ownership question goes through one resolver, so tenancy is a new model plus a data migration, not a rewrite. |
+| **User registration, password reset, roles** | A single env-provisioned login instead. Registration in particular would reopen the exact hole the login closes — anyone could sign up and spend the API key. |
+| **WebSocket broadcasting** | Polling every 2.5s, only while work is in flight. Reverb means a third container plus sticky sessions, for a list that is idle almost all of the time. |
+| **Credits and metering** | A daily extraction ceiling covers the actual risk (an unbounded bill). Per-user quotas need a tenancy model first. |
+| **OCR fallback for poor scans** | The vision model handles the sample documents. A genuinely illegible scan returns nulls with a warning, which is the honest answer. |
+| **Multi-model routing / fallback** | One model, recorded per attempt so a change is attributable. A fallback chain doubles the failure surface for a case that has not occurred. |
+| **Versioned extraction history** | One row per document; re-running replaces it. Better for auditing prompt changes, but a column and a scope away when needed. |
+| **Playwright E2E** | Component tests cover the UI states and feature tests cover the routes. E2E would mostly re-test what those already do. |
+| **CI pipeline** | The four gates above are the whole job — `pint --test`, `phpstan`, `docker compose run --rm test`, `npm run test`. |
+| **i18n** | Single locale. Messages are literal strings rather than translation keys, which is why they read as sentences. |
+
+Two smaller things, named so they read as decisions rather than oversights:
+
+- **Upload feedback survives one redirect.** Rejection and duplicate notices are flashed, so
+  navigating away clears them. Standard flash behaviour, and right for a transient notice.
+- **`/documents/status` returns the full list**, not a delta. At 100 documents that is a few
+  KB; at 10,000 it would want pagination and change-only responses.
 
 ## Build status
 
@@ -202,4 +290,4 @@ tests instead.
 - [x] LLM extraction layer
 - [x] Frontend
 - [x] Tests
-- [ ] `DECISIONS.md`
+- [x] `DECISIONS.md`
