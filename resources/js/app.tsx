@@ -18,9 +18,16 @@ createInertiaApp({
     resolve: (name) =>
         resolvePageComponent(
             `./pages/${name}.tsx`,
-            import.meta.glob<ResolvedComponent>('./pages/**/*.tsx', {
-                import: 'default',
-            }),
+            // The negated pattern is NOT optional. `./pages/**/*.tsx` alone
+            // also matches Index.test.tsx and Show.test.tsx — this directory is
+            // a glob-resolved route namespace, so anything in it is treated as
+            // a page. That shipped 500 KB of Vitest and Testing Library into
+            // the production bundle, and made `Documents/Index.test` resolvable
+            // as a route.
+            import.meta.glob<ResolvedComponent>(
+                ['./pages/**/*.tsx', '!./pages/**/*.test.tsx'],
+                { import: 'default' },
+            ),
         ),
 
     setup({ el, App, props }) {
