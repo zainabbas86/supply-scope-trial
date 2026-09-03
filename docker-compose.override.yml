@@ -18,6 +18,14 @@ services:
         volumes:
             - ./app:/app/app
             - ./bootstrap:/app/bootstrap
+            # An anonymous volume SHADOWS the host's bootstrap/cache.
+            #
+            # Without it the bind mount above drags in a package manifest
+            # generated WITH dev dependencies, and the --no-dev image then dies
+            # on "Class Laravel\Pail\PailServiceProvider not found". The image
+            # builds its own manifest correctly; this stops the host's from
+            # overwriting it.
+            - /app/bootstrap/cache
             - ./config:/app/config
             - ./database:/app/database
             - ./resources:/app/resources
@@ -43,6 +51,14 @@ services:
         volumes:
             - ./app:/app/app
             - ./bootstrap:/app/bootstrap
+            # An anonymous volume SHADOWS the host's bootstrap/cache.
+            #
+            # Without it the bind mount above drags in a package manifest
+            # generated WITH dev dependencies, and the --no-dev image then dies
+            # on "Class Laravel\Pail\PailServiceProvider not found". The image
+            # builds its own manifest correctly; this stops the host's from
+            # overwriting it.
+            - /app/bootstrap/cache
             - ./config:/app/config
             - ./database:/app/database
             - ./resources:/app/resources
