@@ -26,6 +26,12 @@ services:
             # builds its own manifest correctly; this stops the host's from
             # overwriting it.
             - /app/bootstrap/cache
+            # Without this, the bind mounts above are decorative for PHP.
+            # The image compiles with opcache.validate_timestamps = 0, so an
+            # edited controller or route file is never re-read and the browser
+            # serves 10-hour-old bytecode while `php artisan route:list` in the
+            # same container reports the new code. See the file for detail.
+            - ./docker/php/dev-opcache.ini:/usr/local/etc/php/conf.d/zz-dev-opcache.ini:ro
             - ./config:/app/config
             - ./database:/app/database
             - ./resources:/app/resources
@@ -59,6 +65,12 @@ services:
             # builds its own manifest correctly; this stops the host's from
             # overwriting it.
             - /app/bootstrap/cache
+            # Without this, the bind mounts above are decorative for PHP.
+            # The image compiles with opcache.validate_timestamps = 0, so an
+            # edited controller or route file is never re-read and the browser
+            # serves 10-hour-old bytecode while `php artisan route:list` in the
+            # same container reports the new code. See the file for detail.
+            - ./docker/php/dev-opcache.ini:/usr/local/etc/php/conf.d/zz-dev-opcache.ini:ro
             - ./config:/app/config
             - ./database:/app/database
             - ./resources:/app/resources
