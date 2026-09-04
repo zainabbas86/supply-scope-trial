@@ -1,0 +1,226 @@
+﻿<#
+.SYNOPSIS
+    Creates the uat / staging / production GitHub Environments and populates
+    their secrets and variables.
+
+.DESCRIPTION
+    Idempotent: re-running updates values rather than failing, so it doubles as
+    the rotation tool. Nothing is written back to the repository.
+
+    Secrets come from your LOCAL .env (gitignored) or are generated here. They
+    are passed to `gh` on stdin rather than as arguments, so they never appear
+    in the PowerShell command history or in a process list.
+
+    APP_KEY is generated fresh PER ENVIRONMENT. Sharing one would mean a session
+    cookie minted in uat is valid in production - they sign the same things.
+
+.EXAMPLE
+    Run from the repository root, in a LOCAL shell - not in a container and not
+    in CI. It reads the real secrets from your gitignored .env, which exists
+    only on this machine.
+
+    .\scripts\setup-github-envs.ps1 -WhatIf
+    .\scripts\setup-github-envs.ps1
+    .\scripts\setup-github-envs.ps1 -Environments production
+
+    Windows PowerShell 5.1 is fine; so is pwsh 7 if you have it. `php` must be
+    on PATH, because APP_KEY is generated with `php artisan key:generate`.
+#>
+
+# NOTE ON ENCODING
+# This file is saved as UTF-8 WITH BOM and uses ASCII only.
+#
+# Windows PowerShell 5.1 reads a .ps1 without a BOM as ANSI (Windows-1252), so
+# a UTF-8 em-dash in a comment arrives as two bytes and the parser reports
+# "The string is missing the terminator" on a line nowhere near the real one.
+# The BOM makes 5.1 read it as UTF-8; keeping to ASCII means it does not matter
+# either way.
+
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [string[]] $Environments = @('uat', 'staging', 'production'),
+    [string]   $EnvFile = '.env'
+)
+
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+Set-Location $root
+
+# -----------------------------------------------------------------------------
+# Preflight
+# -----------------------------------------------------------------------------
+
+if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+    # Not a here-string: Windows PowerShell 5.1 parses here-strings
+    # unreliably from LF-only files, and this repo enforces LF via
+    # .gitattributes. An array joined with newlines is unambiguous.
+    Write-Error ((
+        'GitHub CLI (gh) is not installed.',
+        '',
+        '    winget install --id GitHub.cli',
+        '',
+        'Then authenticate:',
+        '',
+        '    gh auth login'
+    ) -join [Environment]::NewLine)
+}
+
+# `gh auth status` exits non-zero when signed out.
+gh auth status *> $null
+if ($LASTEXITCODE -ne 0) { Write-Error 'Not signed in. Run: gh auth login' }
+
+if (-not (Test-Path $EnvFile)) {
+    Write-Error "$EnvFile not found. Copy .env.example to .env and fill it in first."
+}
+
+$repo = (gh repo view --json nameWithOwner --jq .nameWithOwner).Trim()
+Write-Host "Repository : $repo"
+Write-Host "Environments: $($Environments -join ', ')`n"
+
+# -----------------------------------------------------------------------------
+# Read the local .env
+# -----------------------------------------------------------------------------
+
+function Get-EnvValue([string] $Key) {
+    $line = Select-String -Path $EnvFile -Pattern "^$Key=" | Select-Object -First 1
+    if (-not $line) { return $null }
+
+    # Split on the FIRST '=' only: a value may legitimately contain more.
+    $value = ($line.Line -split '=', 2)[1]
+    return $value.Trim().Trim('"')
+}
+
+$openAiKey = Get-EnvValue 'OPENAI_API_KEY'
+if ([string]::IsNullOrWhiteSpace($openAiKey)) {
+    Write-Error "OPENAI_API_KEY is empty in $EnvFile."
+}
+
+# -----------------------------------------------------------------------------
+# What goes where
+#
+# The test is not "is this config?" but "would seeing it in a run log matter?".
+# Variables are visible to anyone who can read the repository; secrets are
+# masked and write-only.
+# -----------------------------------------------------------------------------
+
+$sharedSecrets = @{
+    DB_PASSWORD    = (Get-EnvValue 'DB_PASSWORD')
+    REDIS_PASSWORD = (Get-EnvValue 'REDIS_PASSWORD')
+    ADMIN_PASSWORD = (Get-EnvValue 'ADMIN_PASSWORD')
+    OPENAI_API_KEY = $openAiKey
+}
+
+# Non-sensitive, and genuinely different per environment. Anything IDENTICAL
+# everywhere belongs in config/ or .env.example instead - three copies of the
+# same value is three chances to drift.
+$variables = @{
+    uat = @{
+        APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'debug'
+        APP_URL = 'https://uat.example.com'
+        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+        DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
+        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        OPENAI_MODEL = 'gpt-5.5'
+        # A low ceiling here means a runaway test cannot spend production budget.
+        EXTRACTION_DAILY_LIMIT = '25'
+    }
+    staging = @{
+        APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'info'
+        APP_URL = 'https://staging.example.com'
+        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+        DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
+        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        OPENAI_MODEL = 'gpt-5.5'
+        EXTRACTION_DAILY_LIMIT = '100'
+    }
+    production = @{
+        # APP_ENV=production everywhere, including uat: it is what disables
+        # debug pages and enables production error handling. "Which deployment
+        # is this?" is answered by APP_URL, not by pretending uat is local.
+        APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'warning'
+        APP_URL = 'https://example.com'
+        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+        DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
+        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        OPENAI_MODEL = 'gpt-5.5'
+        EXTRACTION_DAILY_LIMIT = '500'
+    }
+}
+
+# -----------------------------------------------------------------------------
+# Helpers
+# -----------------------------------------------------------------------------
+
+function Set-EnvSecret([string] $Env, [string] $Name, [string] $Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        Write-Warning "  ! $Name is empty - skipped"
+        return
+    }
+    if (-not $PSCmdlet.ShouldProcess("$Env/$Name", 'set secret')) { return }
+
+    # stdin, not an argument: keeps the value out of shell history and out of
+    # any process listing.
+    $Value | gh secret set $Name --env $Env --body -
+    if ($LASTEXITCODE -ne 0) { Write-Error "Failed to set secret $Name for $Env" }
+    Write-Host "  secret   $Name"
+}
+
+function Set-EnvVariable([string] $Env, [string] $Name, [string] $Value) {
+    if (-not $PSCmdlet.ShouldProcess("$Env/$Name", 'set variable')) { return }
+
+    gh variable set $Name --env $Env --body $Value | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Error "Failed to set variable $Name for $Env" }
+
+    $note = if ($Value -eq 'CHANGE-ME') { '   <-- CHANGE THIS' } else { '' }
+    Write-Host "  variable $Name = $Value$note"
+}
+
+# -----------------------------------------------------------------------------
+# Apply
+# -----------------------------------------------------------------------------
+
+foreach ($env in $Environments) {
+    Write-Host "`n=== $env ===" -ForegroundColor Cyan
+
+    # Creating an environment is a PUT, so this is idempotent.
+    if ($PSCmdlet.ShouldProcess($env, 'create environment')) {
+        gh api -X PUT "repos/$repo/environments/$env" --silent
+        if ($LASTEXITCODE -ne 0) { Write-Error "Could not create environment $env" }
+        Write-Host "  environment created / confirmed"
+    }
+
+    # A DIFFERENT key per environment, generated here and never stored locally.
+    $appKey = (php artisan key:generate --show).Trim()
+    Set-EnvSecret $env 'APP_KEY' $appKey
+
+    foreach ($name in $sharedSecrets.Keys | Sort-Object) {
+        Set-EnvSecret $env $name $sharedSecrets[$name]
+    }
+
+    # No host yet, so there is nothing real to put here. The deploy job checks
+    # for it and fails with a clear message rather than half-deploying.
+    Write-Warning '  ! DEPLOY_TOKEN not set - add it once a host exists'
+
+    foreach ($name in $variables[$env].Keys | Sort-Object) {
+        Set-EnvVariable $env $name $variables[$env][$name]
+    }
+}
+
+Write-Host ((
+    '',
+    'Done.',
+    '',
+    'Next:',
+    '  1. Replace every CHANGE-ME variable with the real managed-service value:',
+    "       gh variable set DB_HOST --env production --body 'db.internal'",
+    '  2. Add DEPLOY_TOKEN per environment once a host exists.',
+    '  3. Protect production:',
+    '       Settings -> Environments -> production -> Required reviewers',
+    '',
+    'Verify:',
+    '  gh secret list --env production',
+    '  gh variable list --env production'
+) -join [Environment]::NewLine) -ForegroundColor Green

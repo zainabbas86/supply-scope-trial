@@ -254,9 +254,31 @@ once, with `resources/js/Pages` versus the lowercase `pages` that inertia-larave
 
 `.github/workflows/deploy.yml` builds the image **once** and promotes that same artifact to
 `uat`, `staging` or `production` — the thing that passed CI is the thing that ships.
-Environments are GitHub Environments, so secrets are scoped per environment and production
-can require an approving reviewer. Production deploys on a version tag; the others are
-manual.
+Production deploys on a version tag; the others are manual.
+
+### Secrets
+
+`.env.example` contains **no credentials**. Every secret is a GitHub Environment secret, so
+each environment holds its own and can be rotated without touching the repository — and a
+UAT credential is unreadable from a production job.
+
+Set these under **Settings → Environments → *(uat | staging | production)***:
+
+| Secret | |
+|---|---|
+| `APP_KEY` | `php artisan key:generate --show` |
+| `DB_PASSWORD`, `REDIS_PASSWORD` | Managed-service credentials |
+| `OPENAI_API_KEY` | Billed per extraction — scope it per environment |
+| `ADMIN_PASSWORD` | Minimum 12 characters. Blank creates **no** account. |
+| `DEPLOY_TOKEN` | Host credential for the release step |
+
+The deploy job checks all of them **before** touching the host, so a missing secret fails
+with a list of what is absent rather than deploying an app that cannot boot or has no way in.
+
+**Rotating the login is: change `ADMIN_PASSWORD`, re-run the workflow.** `app:ensure-admin`
+is idempotent and keyed on the username, so it updates the password rather than creating a
+second account. There is deliberately no in-app password change — the account is
+provisioned, not self-managed.
 
 ## Deployment
 

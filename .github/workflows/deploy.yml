@@ -117,13 +117,90 @@ jobs:
             #   Fly.io    flyctl deploy --image $IMAGE --app $FLY_APP
             #   Render    curl -X POST "$RENDER_DEPLOY_HOOK"
             #   Cloud Run gcloud run deploy $SERVICE --image $IMAGE
+            #
+            # Every secret is read from the GitHub ENVIRONMENT, not the repo and
+            # not `.env.example`.
+            #
+            # That is what makes uat, staging and production independent: each
+            # holds its own credentials, each can be rotated without touching
+            # the code, and a UAT credential is unreadable from a production job.
+            #
+            # Required per environment (Settings → Environments → Secrets):
+            #   APP_KEY  DB_PASSWORD  REDIS_PASSWORD  OPENAI_API_KEY
+            #   ADMIN_PASSWORD  DEPLOY_TOKEN
+            #
+            # ADMIN_PASSWORD is passed through to `app:ensure-admin`, which is
+            # idempotent — so rotating a password is: change the secret, re-run
+            # this workflow. There is deliberately no in-app password change;
+            # the account is provisioned, not self-managed.
             # -----------------------------------------------------------------
             - name: Release
               env:
                   IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.build.outputs.digest }}
-                  # Per-environment secrets, set in Settings → Environments.
                   DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+                  APP_KEY: ${{ secrets.APP_KEY }}
+                  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                  REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+                  ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+
+                  # ---------------------------------------------------------
+                  # VARIABLES, not secrets: non-sensitive config that differs
+                  # per environment. Visible in run logs, which is exactly what
+                  # you want when diagnosing "why did production behave
+                  # differently" — a masked value tells you nothing.
+                  #
+                  # The test is not "is this config?" but "would seeing it in a
+                  # log matter?". Anything IDENTICAL across environments belongs
+                  # in config/ or .env.example instead: putting it here creates
+                  # three copies that drift.
+                  # ---------------------------------------------------------
+                  APP_ENV: ${{ vars.APP_ENV }}
+                  APP_URL: ${{ vars.APP_URL }}
+                  APP_DEBUG: ${{ vars.APP_DEBUG }}
+                  LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+
+                  DB_HOST: ${{ vars.DB_HOST }}
+                  DB_PORT: ${{ vars.DB_PORT }}
+                  DB_DATABASE: ${{ vars.DB_DATABASE }}
+                  DB_USERNAME: ${{ vars.DB_USERNAME }}
+
+                  REDIS_HOST: ${{ vars.REDIS_HOST }}
+                  REDIS_PORT: ${{ vars.REDIS_PORT }}
+
+                  # Object storage in a deployment; a shared volume only locally.
+                  FILESYSTEM_DISK: ${{ vars.FILESYSTEM_DISK }}
+                  AWS_BUCKET: ${{ vars.AWS_BUCKET }}
+                  AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
+
+                  OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+
+                  # Deliberately per-environment: a low ceiling in uat means a
+                  # runaway test cannot spend production's budget.
+                  EXTRACTION_DAILY_LIMIT: ${{ vars.EXTRACTION_DAILY_LIMIT }}
               run: |
+                  # Fail before touching the host if a secret is missing, rather
+                  # than deploying an app that cannot boot or has no way in.
+                  # `[ -z "$x" ] && assign` would abort the step the moment a
+                  # secret IS present: the test returns non-zero, and Actions
+                  # runs every step under `bash -e`. An explicit `if` is the
+                  # difference between a check and a landmine.
+                  #
+                  # ${!v} is bash indirect expansion — no eval, so a secret
+                  # containing shell metacharacters cannot be executed.
+                  missing=""
+                  for v in APP_KEY DB_PASSWORD REDIS_PASSWORD OPENAI_API_KEY ADMIN_PASSWORD; do
+                    if [ -z "${!v}" ]; then
+                      missing="$missing $v"
+                    fi
+                  done
+
+                  if [ -n "$missing" ]; then
+                    echo "::error::Missing secrets for this environment:$missing"
+                    echo "Set them under Settings → Environments → ${{ inputs.environment || 'production' }}."
+                    exit 1
+                  fi
+
                   if [ -z "${DEPLOY_TOKEN}" ]; then
                     echo "::error::No DEPLOY_TOKEN configured for this environment."
                     echo "The image is published and ready at: ${IMAGE}"
