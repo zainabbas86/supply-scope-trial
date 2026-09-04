@@ -149,6 +149,43 @@ jobs:
                     exit 1
                   fi
 
+                  # Non-empty is not the same as valid.
+                  #
+                  # A secret is write-only: once saved, nothing can read it back
+                  # to check, so a bad value is invisible until something
+                  # downstream chokes on it. `gh secret set --body -` sets the
+                  # literal string "-", reports success, and lists as present.
+                  # That reached production as redis crash-looping on
+                  # "requirepass: wrong number of arguments" - three steps and
+                  # one container away from the actual mistake.
+                  #
+                  # These are shape checks, not strength checks. They cost
+                  # nothing and they turn a silent corruption into a sentence.
+                  bad=""
+                  case "$APP_KEY" in
+                    base64:*) ;;
+                    *) bad="$bad APP_KEY(expected base64:...)" ;;
+                  esac
+                  case "$OPENAI_API_KEY" in
+                    sk-*) ;;
+                    *) bad="$bad OPENAI_API_KEY(expected sk-...)" ;;
+                  esac
+                  for v in DB_PASSWORD REDIS_PASSWORD ADMIN_PASSWORD; do
+                    # ${!v} is indirect expansion, not eval: the value is read,
+                    # never executed, so a password full of shell
+                    # metacharacters stays inert.
+                    val="${!v}"
+                    if [ "${#val}" -lt 8 ]; then
+                      bad="$bad $v(only ${#val} characters)"
+                    fi
+                  done
+
+                  if [ -n "$bad" ]; then
+                    echo "::error::Secret values look wrong:$bad"
+                    echo "Re-set them under Settings -> Environments -> ${{ inputs.environment || 'production' }}."
+                    exit 1
+                  fi
+
                   missing=""
                   for v in SSH_HOST APP_DOMAIN APP_URL; do
                     if [ -z "${!v}" ]; then missing="$missing $v"; fi

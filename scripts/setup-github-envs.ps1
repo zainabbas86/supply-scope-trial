@@ -283,7 +283,17 @@ function Set-EnvSecret {
 
     # stdin, not an argument: keeps the value out of shell history and out of
     # any process listing.
-    $Value | gh secret set $Name --env $Env --body -
+    #
+    # NO --body FLAG. `gh secret set` reads stdin only when --body is ABSENT;
+    # `--body -` does not mean "read stdin", it sets the secret to the literal
+    # one-character string "-".
+    #
+    # That failed silently and expensively: gh reported success, the secret
+    # existed, `gh secret list` showed it present, and the value is write-only
+    # so nothing could reveal it. It surfaced two steps into a deploy as redis
+    # crash-looping on `requirepass: wrong number of arguments`, with APP_KEY
+    # and OPENAI_API_KEY equally broken and no hint they shared a cause.
+    $Value | gh secret set $Name --env $Env
     if ($LASTEXITCODE -ne 0) { Write-Error "Failed to set secret $Name for $Env" }
     Write-Host "  secret   $Name"
 }
