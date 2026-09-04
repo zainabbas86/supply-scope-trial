@@ -390,10 +390,26 @@ jobs:
                   # mount host directories over the image.
                   COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
+                  # -T and </dev/null on every `compose run`.
+                  #
+                  # This script is fed to bash on STDIN. `docker compose run`
+                  # attaches stdin by default, so it reads the REST OF THIS
+                  # SCRIPT as input to the container. Everything after the
+                  # first `run` is consumed, bash then hits EOF, and the step
+                  # exits 0 having silently skipped it.
+                  #
+                  # That is exactly what happened: migrations ran, `up -d`
+                  # never did, no web or worker container was ever created,
+                  # and the deploy reported success. The failure surfaced two
+                  # steps later as the smoke test timing out on port 443, which
+                  # points at TLS and networking rather than at the real cause.
+                  #
+                  # -T stops the TTY allocation; </dev/null is what actually
+                  # detaches the script from the container's stdin.
                   \$COMPOSE pull
                   \$COMPOSE up -d postgres redis
-                  \$COMPOSE run --rm migrate
-                  \$COMPOSE run --rm migrate php artisan app:ensure-admin
+                  \$COMPOSE run --rm -T migrate < /dev/null
+                  \$COMPOSE run --rm -T migrate php artisan app:ensure-admin < /dev/null
                   \$COMPOSE up -d --remove-orphans
 
                   # 50 GB fills faster than you would think when every deploy
@@ -405,11 +421,35 @@ jobs:
             - name: Smoke test
               run: |
                   # A deploy that reports success without the app answering is
-                  # not a success. The retries cover the first boot, where Caddy
-                  # is still obtaining a certificate.
-                  curl --fail --silent --show-error --retry 10 --retry-delay 6 \
-                       --retry-connrefused "${{ vars.APP_URL }}/up"
+                  # not a success.
+                  #
+                  # --retry-all-errors is the flag that makes the retries mean
+                  # anything here. Plain --retry covers timeouts and a handful
+                  # of 5xx codes; --retry-connrefused adds ECONNREFUSED. None
+                  # of them cover a TLS handshake failure — which is precisely
+                  # the first-boot case, where Caddy has not finished obtaining
+                  # a certificate and there is nothing valid to present yet.
+                  # Measured: without this flag curl gives up on a bad
+                  # certificate in 0 seconds, having retried nothing at all.
+                  #
+                  # --connect-timeout bounds each attempt. Without it a single
+                  # attempt can hang for over two minutes and swallow the whole
+                  # retry budget in one go.
+                  curl --fail --silent --show-error \
+                       --retry 10 --retry-delay 6 --retry-all-errors \
+                       --connect-timeout 10 \
+                       "${{ vars.APP_URL }}/up"
                   echo "  /up answered"
+
+                  # The certificate covers www as well, and a name Caddy does
+                  # not hold a certificate for is a browser TLS warning rather
+                  # than a 404 — a failure no health check on the apex sees.
+                  curl --fail --silent --show-error \
+                       --retry 5 --retry-delay 6 --retry-all-errors \
+                       --connect-timeout 10 \
+                       "https://www.${{ vars.APP_DOMAIN }}/up" \
+                    && echo "  www answered" \
+                    || echo "::warning::www.${{ vars.APP_DOMAIN }} did not answer - check APP_SERVER_NAME"
 
             - name: Clean up credentials
               if: always()
