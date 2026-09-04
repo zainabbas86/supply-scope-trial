@@ -4,8 +4,21 @@
     their secrets and variables.
 
 .DESCRIPTION
-    Idempotent: re-running updates values rather than failing, so it doubles as
-    the rotation tool. Nothing is written back to the repository.
+    Idempotent. `gh secret set` and `gh variable set` are upserts, so an
+    existing value is REPLACED and a missing one created; creating the
+    environment is a PUT. Re-running is therefore safe and this doubles as the
+    rotation tool. Nothing is written back to the repository.
+
+    Two things it does NOT do:
+
+      - It never DELETES. A secret or variable you set once and later removed
+        from this script stays behind in the environment. Remove those by hand:
+            gh secret list --env production
+            gh variable delete OLD_NAME --env production
+
+      - It does not replace an APP_KEY that already exists, because that is the
+        one value where an upsert is destructive rather than merely updating.
+        Pass -RotateAppKey when you actually mean to.
 
     Secrets come from your LOCAL .env (gitignored) or are generated here. They
     are passed to `gh` on stdin rather than as arguments, so they never appear
@@ -40,6 +53,11 @@
 param(
     [string[]] $Environments = @('uat', 'staging', 'production'),
     [string]   $EnvFile = '.env',
+
+    # Replace an APP_KEY that already exists. Off by default: rotating it logs
+    # every session out and makes anything encrypted with the old key
+    # unreadable, which is not something a re-run should do by accident.
+    [switch]   $RotateAppKey,
 
     # The PRIVATE half of the key whose public half is in the VPS's
     # authorized_keys. GitHub Actions uses it to SSH in and deploy.
@@ -260,8 +278,24 @@ foreach ($env in $Environments) {
     }
 
     # A DIFFERENT key per environment, generated here and never stored locally.
-    $appKey = (php artisan key:generate --show).Trim()
-    Set-EnvSecret $env 'APP_KEY' $appKey
+    #
+    # Generated ONLY when the environment does not already have one. Everything
+    # else in this script is an upsert and re-running is harmless, but APP_KEY
+    # is not that kind of value: replacing it invalidates every session and
+    # makes anything encrypted with the old key unreadable. A tool you re-run
+    # to fix one variable must not quietly do that.
+    $hasAppKey = $false
+    $existing = gh secret list --env $env 2>$null
+    if ($LASTEXITCODE -eq 0 -and $existing) {
+        $hasAppKey = [bool]($existing | Select-String -Pattern '^APP_KEY\s' -Quiet)
+    }
+
+    if ($RotateAppKey -or -not $hasAppKey) {
+        $appKey = (php artisan key:generate --show).Trim()
+        Set-EnvSecret $env 'APP_KEY' $appKey
+    } else {
+        Write-Host '  secret   APP_KEY (kept - pass -RotateAppKey to replace it)'
+    }
 
     foreach ($name in $sharedSecrets.Keys | Sort-Object) {
         Set-EnvSecret $env $name $sharedSecrets[$name]

@@ -189,8 +189,32 @@ jobs:
                   umask 077
                   mkdir -p ~/.ssh
 
-                  printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+                  # printf supplies the trailing newline a paste often loses;
+                  # tr strips CR, since a value pasted from Windows can carry
+                  # CRLF. Neither is expensive and both are invisible in a
+                  # secret you cannot read back to check.
+                  printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_deploy
                   chmod 600 ~/.ssh/id_deploy
+
+                  # Validate the key HERE.
+                  #
+                  # Without this the failure surfaces two commands later as
+                  # "Permission denied (publickey)", which reads like a
+                  # server-side authorisation problem and sends you to
+                  # authorized_keys — when the real fault is a malformed secret
+                  # on this side. The preceding line in that log is
+                  # `error in libcrypto`, and it is easy to miss.
+                  #
+                  # A secret cannot be read back once saved, so a bad paste is
+                  # otherwise invisible until it fails obscurely.
+                  if ! ssh-keygen -y -f ~/.ssh/id_deploy > /dev/null 2>&1; then
+                    echo "::error::SSH_PRIVATE_KEY is not a valid private key."
+                    echo "Paste the PRIVATE half - the file with NO .pub extension -"
+                    echo "in full, including the BEGIN and END lines."
+                    echo "On Windows, copy it in a way that preserves the newlines:"
+                    echo '  [IO.File]::ReadAllText("$env:USERPROFILE\.ssh\<key>") | Set-Clipboard'
+                    exit 1
+                  fi
 
                   if [ -n "$SSH_KNOWN_HOSTS" ]; then
                     printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
