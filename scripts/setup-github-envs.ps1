@@ -113,6 +113,17 @@ $sharedSecrets = @{
 # Non-sensitive, and genuinely different per environment. Anything IDENTICAL
 # everywhere belongs in config/ or .env.example instead - three copies of the
 # same value is three chances to drift.
+#
+# FILESYSTEM_DISK is 'local', not 's3'.
+#
+# Web and worker are separate containers, and the worker must read the file the
+# web container wrote. On a single host they share a docker volume, so the local
+# disk is genuinely shared and 's3' would be a lie: league/flysystem-aws-s3-v3
+# is not installed, so the driver would fail on the first upload.
+#
+# It becomes 's3' only if web and worker are ever split across machines - a
+# platform where volumes attach to one machine (Fly, Render, Cloud Run). That is
+# a package install and a bucket, not a config flip.
 $variables = @{
     uat = @{
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'debug'
@@ -120,7 +131,7 @@ $variables = @{
         DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
         REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
-        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         # A low ceiling here means a runaway test cannot spend production budget.
         EXTRACTION_DAILY_LIMIT = '25'
@@ -131,7 +142,7 @@ $variables = @{
         DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
         REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
-        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         EXTRACTION_DAILY_LIMIT = '100'
     }
@@ -144,7 +155,7 @@ $variables = @{
         DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
         REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
-        FILESYSTEM_DISK = 's3'; AWS_BUCKET = 'CHANGE-ME'; AWS_DEFAULT_REGION = 'us-east-1'
+        FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         EXTRACTION_DAILY_LIMIT = '500'
     }

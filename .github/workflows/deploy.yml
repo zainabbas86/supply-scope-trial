@@ -168,7 +168,14 @@ jobs:
                   REDIS_HOST: ${{ vars.REDIS_HOST }}
                   REDIS_PORT: ${{ vars.REDIS_PORT }}
 
-                  # Object storage in a deployment; a shared volume only locally.
+                  # The worker reads the file the web container wrote, so this
+                  # disk MUST be reachable from both. On a single host they
+                  # share a docker volume and `local` is correct.
+                  #
+                  # `s3` would need league/flysystem-aws-s3-v3, which is not
+                  # installed — it is only worth adding if web and worker are
+                  # ever split across machines. The AWS_* variables stay wired
+                  # so that switch is a package install, not a workflow edit.
                   FILESYSTEM_DISK: ${{ vars.FILESYSTEM_DISK }}
                   AWS_BUCKET: ${{ vars.AWS_BUCKET }}
                   AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
