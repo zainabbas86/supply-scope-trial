@@ -73,10 +73,18 @@ services:
             # granting CAP_NET_BIND_SERVICE. Must match the Dockerfile.
             SERVER_NAME: ":8080"
         ports:
-            # Host 8080 because Herd already runs nginx on port 80 here, and
-            # container 8080 because the app runs non-root and cannot bind a
-            # privileged port. Keep APP_URL in `.env` in sync.
-            - "${APP_PORT:-8080}:8080"
+            # Host 8080 because Herd already runs nginx on port 80 here.
+            #
+            # Bound to 127.0.0.1, not 0.0.0.0. `- "8080:8080"` publishes on
+            # EVERY interface, which is invisible behind a home router and
+            # means "open to the internet" the moment this file runs on a VPS
+            # with a public IP. Docker publishes ports by writing iptables
+            # rules that bypass ufw, so a host firewall would not have saved
+            # it either. Loopback is the correct default; production adds its
+            # own public mapping in docker-compose.prod.yml.
+            #
+            # Keep APP_URL in `.env` in sync.
+            - "127.0.0.1:${APP_PORT:-8080}:8080"
         volumes:
             # THE load-bearing decision of this file. The worker is a separate
             # container and must re-read files the web container wrote;
@@ -203,7 +211,13 @@ services:
         ports:
             # Published so Herd on the host can reach it — the fast inner loop.
             # .env's DB_PORT is that host port; the container still listens 5432.
-            - "${DB_PORT:-55432}:5432"
+            #
+            # 127.0.0.1 is load-bearing, not tidiness. Without it this database
+            # is reachable from the internet the moment the stack runs on a
+            # public IP, and an exposed Postgres is found by scanners in
+            # minutes. Nothing outside this host needs it: web and worker
+            # connect over the compose network as `postgres:5432`.
+            - "127.0.0.1:${DB_PORT:-55432}:5432"
         volumes:
             - pgdata:/var/lib/postgresql/data
             # Creates the separate test database on first init. Scripts in
@@ -238,7 +252,10 @@ services:
             # Present only so the healthcheck below can authenticate.
             REDIS_PASSWORD: ${REDIS_PASSWORD}
         ports:
-            - "${REDIS_PORT:-56379}:6379"
+            # Loopback only — see the note on postgres. An internet-facing
+            # Redis is worse than an exposed database: it is the classic
+            # unauthenticated remote-write target, and this one holds the queue.
+            - "127.0.0.1:${REDIS_PORT:-56379}:6379"
         volumes:
             - redisdata:/data
         healthcheck:
