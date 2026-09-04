@@ -3,6 +3,7 @@ import { useState } from 'react';
 import StatusBadge from '@/Components/StatusBadge';
 import AppLayout from '@/Layouts/AppLayout';
 import type { Attempt, DocumentDetail } from '@/types/documents';
+import { appUrl } from '@/lib/url';
 
 export default function Show({ document }: { document: DocumentDetail & { attempts_log?: Attempt[] } }) {
     const extraction = document.extraction;
@@ -11,7 +12,7 @@ export default function Show({ document }: { document: DocumentDetail & { attemp
         <AppLayout title={document.filename}>
             <Head title={document.filename} />
 
-            <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-900">
+            <Link href={appUrl('/')} className="text-sm text-neutral-500 hover:text-neutral-900">
                 ← All documents
             </Link>
 
@@ -30,7 +31,7 @@ export default function Show({ document }: { document: DocumentDetail & { attemp
                     <p className="mt-1 text-sm text-red-800">{document.failureReason}</p>
                     <button
                         type="button"
-                        onClick={() => router.post(`/documents/${document.id}/retry`)}
+                        onClick={() => router.post(appUrl(`/documents/${document.id}/retry`))}
                         className="mt-3 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 transition hover:bg-red-50"
                     >
                         Retry extraction

@@ -38,6 +38,15 @@ class HandleInertiaRequests extends Middleware
         return [
             ...parent::share($request),
 
+            // The prefix the extraction app is mounted at, e.g.
+            // "/labelextractionagent". The frontend builds every internal URL
+            // from this via appUrl() in resources/js/lib/url.ts.
+            //
+            // Without it the prefix would be pasted into each `router.post`
+            // and `<Link href>` — and the day it changes, the one that was
+            // missed is a 404 nobody notices until a user finds it.
+            'appBase' => '/'.trim((string) config('site.app_prefix'), '/'),
+
             // Shared with EVERY page. The TypeScript shape of this array lives
             // in resources/js/types/inertia.d.ts and is maintained by hand —
             // PHP types do not flow into TypeScript, so renaming a key here

@@ -284,6 +284,24 @@ green while the UI renders `undefined`. At ~20 models the answer is
 `spatie/laravel-typescript-transformer` generating them from PHP DTOs; at two shapes, the
 generator costs more than it saves.
 
+**A hardcoded route prefix, not an environment variable.** The app is mounted at
+`/labelextractionagent` because the domain root is a portfolio page. The obvious
+implementation is `env('APP_ROUTE_PREFIX', '')` — and it is the wrong one: the app would
+then answer at `/` locally and under a prefix in production, so every route, redirect and
+link would be exercised in a shape that never ships. This project has already been bitten
+four times by precisely that gap — a `Pages` directory that only resolved on a
+case-insensitive filesystem, an absent Vite manifest, an untracked `tests/Unit`, a
+dev-generated package manifest dragged in by a bind mount. Each passed locally and failed
+elsewhere. The prefix lives in `config/site.php` with the same value everywhere, so a
+mistake is visible on the machine where it is cheapest to fix.
+
+The frontend gets it as one shared Inertia prop and builds every internal URL through
+`appUrl()` (`resources/js/lib/url.ts`), rather than the prefix being pasted into a dozen
+`router.post` calls where the one that was missed is a 404 nobody finds until a user does.
+The Pest suite builds URLs with `route()` and is therefore prefix-agnostic — so
+`PortfolioTest` asserts the literal published paths on purpose, as the single place that
+would notice the prefix moving.
+
 ---
 
 ## 7. A note on the API key

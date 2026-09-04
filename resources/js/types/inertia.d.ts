@@ -13,6 +13,12 @@
 declare module '@inertiajs/core' {
     interface InertiaConfig {
         sharedPageProps: {
+            /**
+             * The prefix the extraction app is mounted at, e.g.
+             * "/labelextractionagent". Set into resources/js/lib/url.ts at boot
+             * and read from there — components should call appUrl(), not this.
+             */
+            appBase: string;
             auth: {
                 user: {
                     id: number;

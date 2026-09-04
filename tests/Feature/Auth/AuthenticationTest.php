@@ -21,13 +21,13 @@ beforeEach(function () {
 // -----------------------------------------------------------------------------
 
 it('redirects an unauthenticated visitor to the login page', function () {
-    $this->get('/')->assertRedirect('/login');
+    $this->get(route('documents.index'))->assertRedirect(route('login'));
 });
 
 it('refuses an unauthenticated upload', function () {
     // Every upload is a vision-model call billed to the API key, so this is a
     // spend control as much as an access control.
-    $this->post('/documents', ['files' => []])->assertRedirect('/login');
+    $this->post(route('documents.store'), ['files' => []])->assertRedirect(route('login'));
 });
 
 it('keeps the health endpoint public', function () {
@@ -37,7 +37,7 @@ it('keeps the health endpoint public', function () {
 });
 
 it('renders the login page for a guest', function () {
-    $this->get('/login')->assertOk();
+    $this->get(route('login'))->assertOk();
 });
 
 // -----------------------------------------------------------------------------
@@ -45,16 +45,16 @@ it('renders the login page for a guest', function () {
 // -----------------------------------------------------------------------------
 
 it('signs in with a plain username, not an email address', function () {
-    $this->post('/login', [
+    $this->post(route('login'), [
         'email' => 'admin',
         'password' => 'correct-horse-battery',
-    ])->assertRedirect('/');
+    ])->assertRedirect(route('documents.index'));
 
     $this->assertAuthenticatedAs($this->user);
 });
 
 it('rejects a wrong password', function () {
-    $this->post('/login', ['email' => 'admin', 'password' => 'wrong'])
+    $this->post(route('login'), ['email' => 'admin', 'password' => 'wrong'])
         ->assertSessionHasErrors('email');
 
     $this->assertGuest();
@@ -63,10 +63,10 @@ it('rejects a wrong password', function () {
 it('gives the same answer for an unknown user as for a wrong password', function () {
     // Different messages would turn the login form into an oracle for which
     // identifiers exist.
-    $unknown = $this->post('/login', ['email' => 'nobody', 'password' => 'wrong'])
+    $unknown = $this->post(route('login'), ['email' => 'nobody', 'password' => 'wrong'])
         ->assertSessionHasErrors('email');
 
-    $wrong = $this->post('/login', ['email' => 'admin', 'password' => 'wrong'])
+    $wrong = $this->post(route('login'), ['email' => 'admin', 'password' => 'wrong'])
         ->assertSessionHasErrors('email');
 
     expect(session('errors')->first('email'))->toBe('These credentials do not match our records.');
@@ -77,16 +77,16 @@ it('regenerates the session id on login', function () {
     // Session-fixation defence, and the single most commonly omitted line in a
     // hand-rolled login: without it, a session id an attacker planted before
     // login stays valid afterwards — now authenticated.
-    $this->get('/login');
+    $this->get(route('login'));
     $before = session()->getId();
 
-    $this->post('/login', ['email' => 'admin', 'password' => 'correct-horse-battery']);
+    $this->post(route('login'), ['email' => 'admin', 'password' => 'correct-horse-battery']);
 
     expect(session()->getId())->not->toBe($before);
 });
 
 it('signs out and invalidates the session', function () {
-    $this->actingAs($this->user)->post('/logout')->assertRedirect('/login');
+    $this->actingAs($this->user)->post(route('logout'))->assertRedirect(route('login'));
 
     $this->assertGuest();
 });
@@ -99,10 +99,10 @@ it('locks out after too many failed attempts on one account', function () {
     $max = (int) config('access.throttle.login');
 
     for ($i = 0; $i < $max; $i++) {
-        $this->post('/login', ['email' => 'admin', 'password' => 'wrong']);
+        $this->post(route('login'), ['email' => 'admin', 'password' => 'wrong']);
     }
 
-    $this->post('/login', ['email' => 'admin', 'password' => 'wrong'])
+    $this->post(route('login'), ['email' => 'admin', 'password' => 'wrong'])
         ->assertSessionHasErrors('email');
 
     expect(session('errors')->first('email'))->toContain('Too many login attempts');

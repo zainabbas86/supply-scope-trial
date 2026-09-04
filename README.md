@@ -143,7 +143,10 @@ stores and renders.
   because the UI polls it every 2.5 seconds per open tab.
 - **A daily extraction ceiling**, so a leaked credential cannot run up an unbounded bill overnight.
 
-Only the login page and the `/up` health endpoint are public.
+Public surface: the portfolio page at `/`, the login page, and the `/up` health endpoint.
+Everything under the app prefix that touches a document requires a session, and every
+document is scoped to its owner — a foreign id returns 404, not 403, so the endpoint does
+not confirm that someone else's document exists.
 
 ## Getting started
 
@@ -156,7 +159,15 @@ docker compose run --rm migrate
 docker compose run --rm web php artisan app:ensure-admin
 ```
 
-Then open **http://localhost:8080** and sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+Then open **http://localhost:8080/labelextractionagent/login** and sign in with
+`ADMIN_USERNAME` / `ADMIN_PASSWORD`.
+
+**The app is mounted under a prefix, not at the domain root.** `http://localhost:8080/`
+is a portfolio page; the extraction app lives beneath it. The prefix is defined once in
+[`config/site.php`](config/site.php) and is deliberately *not* environment-switchable —
+answering on `/` locally and on a prefix in production would mean every route, redirect
+and link is exercised in a shape that never ships. Same value everywhere, so a mistake
+shows up on your machine rather than after a deploy.
 
 Three things worth knowing before the first run:
 

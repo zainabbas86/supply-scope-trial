@@ -1,5 +1,6 @@
 import { Head, useForm } from '@inertiajs/react';
 import type { FormEvent } from 'react';
+import { appUrl } from '@/lib/url';
 
 /**
  * The only way into the application.
@@ -19,7 +20,7 @@ export default function Login() {
         e.preventDefault();
         // Clear the password on any outcome so a failed attempt never leaves a
         // credential sitting in a form field.
-        post('/login', { onFinish: () => reset('password') });
+        post(appUrl('/login'), { onFinish: () => reset('password') });
     };
 
     return (

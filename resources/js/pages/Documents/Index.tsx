@@ -4,6 +4,7 @@ import FileDropzone from '@/Components/FileDropzone';
 import StatusBadge from '@/Components/StatusBadge';
 import AppLayout from '@/Layouts/AppLayout';
 import type { DocumentSummary, RejectedFile } from '@/types/documents';
+import { appUrl } from '@/lib/url';
 
 const POLL_MS = 2500;
 
@@ -41,7 +42,7 @@ export default function Index({ documents, maxFiles, maxFileSizeMb }: Props) {
 
         const timer = setInterval(async () => {
             try {
-                const response = await fetch('/documents/status', {
+                const response = await fetch(appUrl('/documents/status'), {
                     headers: { Accept: 'application/json' },
                 });
 
@@ -140,7 +141,7 @@ function DocumentTable({ rows }: { rows: DocumentSummary[] }) {
                         <tr key={row.id} className="align-top">
                             <td className="px-4 py-3">
                                 <Link
-                                    href={`/documents/${row.id}`}
+                                    href={appUrl(`/documents/${row.id}`)}
                                     className="font-medium text-neutral-900 hover:text-teal-700 hover:underline"
                                 >
                                     {row.filename}
@@ -179,7 +180,7 @@ function DocumentTable({ rows }: { rows: DocumentSummary[] }) {
                                         type="button"
                                         onClick={() =>
                                             router.post(
-                                                `/documents/${row.id}/retry`,
+                                                appUrl(`/documents/${row.id}/retry`),
                                                 {},
                                                 { preserveScroll: true },
                                             )

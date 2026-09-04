@@ -34,7 +34,7 @@ beforeEach(function () {
 });
 
 it('renders the index with the upload limits the server enforces', function () {
-    $this->get('/')->assertOk()->assertInertia(
+    $this->get(route('documents.index'))->assertOk()->assertInertia(
         fn (AssertableInertia $page) => $page
             ->component('Documents/Index')
             ->where('maxFiles', config('uploads.max_files_per_request'))
@@ -49,7 +49,7 @@ it('lists only the caller documents', function () {
     Document::factory()->ownedBy($this->owner)->count(2)->create();
     Document::factory()->ownedBy($this->other)->count(3)->create();
 
-    $this->get('/')->assertInertia(
+    $this->get(route('documents.index'))->assertInertia(
         fn (AssertableInertia $page) => $page->has('documents', 2)
     );
 });
@@ -57,7 +57,7 @@ it('lists only the caller documents', function () {
 it('serves the polling endpoint as json and reports whether work is in flight', function () {
     Document::factory()->ownedBy($this->owner)->create(['status' => DocumentStatus::Queued]);
 
-    $this->getJson('/documents/status')
+    $this->getJson(route('documents.status'))
         ->assertOk()
         ->assertJsonPath('processing', true)
         ->assertJsonCount(1, 'documents');
@@ -69,14 +69,14 @@ it('reports nothing in flight once everything is terminal', function () {
 
     // The client stops polling on this flag, so a wrong answer here means
     // either a stuck spinner or a list that never updates.
-    $this->getJson('/documents/status')->assertJsonPath('processing', false);
+    $this->getJson(route('documents.status'))->assertJsonPath('processing', false);
 });
 
 it('shows a document with its extraction and attempts', function () {
     $document = Document::factory()->ownedBy($this->owner)->completed()->create();
     Extraction::factory()->create(['document_id' => $document->id]);
 
-    $this->get("/documents/{$document->id}")
+    $this->get(route('documents.show', $document))
         ->assertOk()
         ->assertInertia(
             fn (AssertableInertia $page) => $page
@@ -94,14 +94,14 @@ it('returns 404, not 403, for another owner document', function () {
 
     // A 403 confirms the document exists and merely is not yours — an oracle
     // an attacker can enumerate against.
-    $this->get("/documents/{$theirs->id}")->assertNotFound();
+    $this->get(route('documents.show', $theirs))->assertNotFound();
 });
 
 it('re-dispatches a failed document and clears the stale failure', function () {
     Queue::fake();
     $document = Document::factory()->ownedBy($this->owner)->failed()->create();
 
-    $this->post("/documents/{$document->id}/retry")->assertRedirect();
+    $this->post(route('documents.retry', $document))->assertRedirect();
 
     $document->refresh();
     expect($document->status)->toBe(DocumentStatus::Queued)
@@ -119,7 +119,7 @@ it('refuses to retry a completed document', function () {
     // Re-running a completed extraction pays for something already extracted.
     $document = Document::factory()->ownedBy($this->owner)->completed()->create();
 
-    $this->post("/documents/{$document->id}/retry")->assertForbidden();
+    $this->post(route('documents.retry', $document))->assertForbidden();
 
     ExtractLabelData::assertNotPushed();
 });
@@ -128,7 +128,7 @@ it('refuses to retry another owner document', function () {
     Queue::fake();
     $theirs = Document::factory()->ownedBy($this->other)->failed()->create();
 
-    $this->post("/documents/{$theirs->id}/retry")->assertNotFound();
+    $this->post(route('documents.retry', $theirs))->assertNotFound();
 
     ExtractLabelData::assertNotPushed();
 });

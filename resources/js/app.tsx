@@ -3,6 +3,8 @@ import type { ResolvedComponent } from '@inertiajs/react';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createRoot } from 'react-dom/client';
 
+import { setAppBase } from '@/lib/url';
+
 const appName = import.meta.env.VITE_APP_NAME || 'Label Extraction Agent';
 
 createInertiaApp({
@@ -31,6 +33,11 @@ createInertiaApp({
         ),
 
     setup({ el, App, props }) {
+        // Before the first render, so no component can build a URL against an
+        // empty base. PHP owns this value (config/site.php); the frontend only
+        // ever reads it.
+        setAppBase(props.initialPage.props.appBase);
+
         createRoot(el).render(<App {...props} />);
     },
 

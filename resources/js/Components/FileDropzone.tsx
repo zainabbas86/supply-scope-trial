@@ -1,5 +1,6 @@
 import { useForm } from '@inertiajs/react';
 import { useRef, useState } from 'react';
+import { appUrl } from '@/lib/url';
 
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp';
 
@@ -47,7 +48,7 @@ export default function FileDropzone({
         if (problems.length > 0) return;
 
         setData('files', chosen);
-        post('/documents', {
+        post(appUrl('/documents'), {
             forceFormData: true,
             preserveScroll: true,
             onSuccess: () => {

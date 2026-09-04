@@ -1,5 +1,6 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import type { PropsWithChildren } from 'react';
+import { appUrl } from '@/lib/url';
 
 export default function AppLayout({
     title,
@@ -11,7 +12,7 @@ export default function AppLayout({
         <div className="min-h-screen bg-neutral-50">
             <header className="border-b border-neutral-200 bg-white">
                 <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-                    <Link href="/" className="text-sm font-semibold text-neutral-900">
+                    <Link href={appUrl('/')} className="text-sm font-semibold text-neutral-900">
                         Label Extraction Agent
                     </Link>
 
@@ -19,7 +20,7 @@ export default function AppLayout({
                         <span>{auth.user?.name}</span>
                         <button
                             type="button"
-                            onClick={() => router.post('/logout')}
+                            onClick={() => router.post(appUrl('/logout'))}
                             className="rounded-md px-2 py-1 text-neutral-500 transition hover:bg-neutral-100 hover:text-neutral-900"
                         >
                             Sign out

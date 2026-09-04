@@ -97,7 +97,7 @@ it('blocks a retry once the ceiling is spent', function () {
     $failed = Document::factory()->ownedBy($this->owner)->failed()->create();
 
     $this->actingAs($this->owner)
-        ->post("/documents/{$failed->id}/retry")
+        ->post(route('documents.retry', $failed))
         ->assertRedirect();
 
     expect($failed->fresh()->status->value)->toBe('failed');

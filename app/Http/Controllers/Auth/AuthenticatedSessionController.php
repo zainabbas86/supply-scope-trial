@@ -68,7 +68,10 @@ class AuthenticatedSessionController extends Controller
         // before login stays valid afterwards and is now authenticated.
         $request->session()->regenerate();
 
-        return redirect()->intended('/');
+        // route('documents.index'), NOT '/'. The site root is the public
+        // portfolio page, so a bare '/' would sign a user in and then drop them
+        // outside the app they just authenticated into.
+        return redirect()->intended(route('documents.index'));
     }
 
     public function destroy(Request $request): RedirectResponse
