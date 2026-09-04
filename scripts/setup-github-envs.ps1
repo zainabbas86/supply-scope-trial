@@ -173,6 +173,7 @@ $variables = @{
     uat = @{
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'debug'
         APP_URL = 'https://uat.example.com'; APP_DOMAIN = 'uat.example.com'
+        APP_SERVER_NAME = 'uat.example.com'; APP_REDIRECT_FROM = 'CHANGE-ME'
         SSH_HOST = 'CHANGE-ME'; SSH_USER = 'root'; SSH_PORT = '22'
         DEPLOY_DIR = '/srv/supplyscope'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
@@ -185,6 +186,7 @@ $variables = @{
     staging = @{
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'info'
         APP_URL = 'https://staging.example.com'; APP_DOMAIN = 'staging.example.com'
+        APP_SERVER_NAME = 'staging.example.com'; APP_REDIRECT_FROM = 'CHANGE-ME'
         SSH_HOST = 'CHANGE-ME'; SSH_USER = 'root'; SSH_PORT = '22'
         DEPLOY_DIR = '/srv/supplyscope'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
@@ -211,9 +213,17 @@ $variables = @{
         # anyone intended it. Leaving it out of APP_SERVER_NAME does not give
         # visitors a 404 - it gives them a browser TLS warning, which is worse
         # and looks broken.
-        APP_URL = 'https://zainabbas.com.au'
-        APP_DOMAIN = 'zainabbas.com.au'
-        APP_SERVER_NAME = 'zainabbas.com.au www.zainabbas.com.au'
+        # www is canonical; the apex 301s to it.
+        #
+        # APP_SERVER_NAME lists only the name that SERVES the app. The apex is
+        # handled by its own redirect block (APP_REDIRECT_FROM), so listing it
+        # here as well would make Caddy serve the app on both - which is the
+        # thing being avoided: a session cookie set on www is not sent to the
+        # apex, so following an apex link would silently sign you out.
+        APP_URL = 'https://www.zainabbas.com.au'
+        APP_DOMAIN = 'www.zainabbas.com.au'
+        APP_SERVER_NAME = 'www.zainabbas.com.au'
+        APP_REDIRECT_FROM = 'zainabbas.com.au'
 
         SSH_HOST = '31.97.71.13'; SSH_USER = 'root'; SSH_PORT = '22'
         DEPLOY_DIR = '/srv/supplyscope'

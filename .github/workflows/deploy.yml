@@ -310,6 +310,12 @@ jobs:
                   # planned for. Defaults to the single canonical domain.
                   APP_SERVER_NAME: ${{ vars.APP_SERVER_NAME || vars.APP_DOMAIN }}
 
+                  # Hostnames that 301 to APP_DOMAIN rather than serving the
+                  # app. Exactly one name should serve it: a session cookie set
+                  # on www is not sent to the apex, so serving both silently
+                  # signs people out when they follow a link to the other.
+                  APP_REDIRECT_FROM: ${{ vars.APP_REDIRECT_FROM }}
+
                   LOG_LEVEL: ${{ vars.LOG_LEVEL || 'warning' }}
                   DB_DATABASE: ${{ vars.DB_DATABASE || 'label_extractor' }}
                   DB_USERNAME: ${{ vars.DB_USERNAME || 'label_extractor' }}
@@ -358,6 +364,7 @@ jobs:
                     printf 'APP_IMAGE=%s\n'  "$APP_IMAGE"
                     printf 'APP_DOMAIN=%s\n' "$APP_DOMAIN"
                     printf 'APP_SERVER_NAME=%s\n' "$APP_SERVER_NAME"
+                    printf 'APP_REDIRECT_FROM=%s\n' "$APP_REDIRECT_FROM"
                   } > deploy.env
 
                   echo "wrote $(grep -c '=' deploy.env) settings (values not shown)"
@@ -441,15 +448,25 @@ jobs:
                        "${{ vars.APP_URL }}/up"
                   echo "  /up answered"
 
-                  # The certificate covers www as well, and a name Caddy does
-                  # not hold a certificate for is a browser TLS warning rather
-                  # than a 404 — a failure no health check on the apex sees.
-                  curl --fail --silent --show-error \
-                       --retry 5 --retry-delay 6 --retry-all-errors \
-                       --connect-timeout 10 \
-                       "https://www.${{ vars.APP_DOMAIN }}/up" \
-                    && echo "  www answered" \
-                    || echo "::warning::www.${{ vars.APP_DOMAIN }} did not answer - check APP_SERVER_NAME"
+                  # The redirecting hostname needs its own certificate — it
+                  # serves the 301 over HTTPS — and a name Caddy does not hold
+                  # a certificate for produces a browser TLS warning rather
+                  # than a 404, which no check on the canonical host would see.
+                  #
+                  # --head, and NOT --location: following the redirect would
+                  # just re-test the canonical host and pass regardless. What
+                  # matters is that a 301 is returned at all.
+                  redirect_from="${{ vars.APP_REDIRECT_FROM }}"
+                  if [ -n "$redirect_from" ]; then
+                    code=$(curl --silent --show-error --head --output /dev/null \
+                                --retry 5 --retry-delay 6 --retry-all-errors \
+                                --connect-timeout 10 --write-out '%{http_code}' \
+                                "https://${redirect_from}/") || code=000
+                    case "$code" in
+                      301|308) echo "  ${redirect_from} redirects ($code)" ;;
+                      *) echo "::warning::${redirect_from} returned $code, expected a 301 - check APP_REDIRECT_FROM" ;;
+                    esac
+                  fi
 
             - name: Clean up credentials
               if: always()

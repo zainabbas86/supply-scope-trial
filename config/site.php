@@ -42,7 +42,7 @@ return [
     'contact' => [
         'email' => env('SITE_CONTACT_EMAIL', 'zainabbas86@hotmail.com'),
         'github' => env('SITE_GITHUB_URL', 'https://github.com/zainabbas86'),
-        'linkedin' => env('SITE_LINKEDIN_URL', 'https://www.linkedin.com/in/zainabbas86'),
+        'linkedin' => env('SITE_LINKEDIN_URL', 'https://www.linkedin.com/in/zain-abbas-64a762a'),
     ],
 
 ];

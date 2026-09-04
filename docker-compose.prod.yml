@@ -48,6 +48,26 @@ services:
             # Space-separated, e.g. "example.com www.example.com".
             SERVER_NAME: ${APP_SERVER_NAME:?APP_SERVER_NAME must be set, e.g. "example.com www.example.com"}
 
+            # One canonical hostname, everything else redirected to it.
+            #
+            # Serving the same app on both the apex and www "works", and is
+            # what you get by listing both in SERVER_NAME — but then neither is
+            # canonical: search engines see duplicate content, and a session
+            # cookie set on one host is not sent to the other, so signing in on
+            # www and then following an apex link logs you out.
+            #
+            # This is a separate Caddy site block, injected ahead of the app's,
+            # so the redirect happens before any PHP runs. Caddy obtains a
+            # certificate for the redirecting name too - it has to, since the
+            # redirect itself is served over HTTPS.
+            #
+            # 301 (`permanent`), not 302: this is a permanent decision about
+            # which name the site lives at.
+            CADDY_EXTRA_CONFIG: |
+              ${APP_REDIRECT_FROM:?APP_REDIRECT_FROM must be set, e.g. example.com} {
+                  redir https://${APP_DOMAIN}{uri} permanent
+              }
+
         ports:
             # Real ports, bound on every interface, which is correct here and
             # only here. The frankenphp binary carries cap_net_bind_service, so
