@@ -233,6 +233,44 @@ $variables = @{
 # $PSCmdlet here resolves to the script's, through dynamic scoping - which
 # happens to work and is not something to rely on. Declared, each function has
 # its own, and -WhatIf still reaches it through $WhatIfPreference.
+# The server's host key, in known_hosts format, for SSH_KNOWN_HOSTS.
+#
+# Pinning this is what stops the deploy job handing its private key to whatever
+# answers on that IP. Without it the workflow falls back to trust-on-first-use.
+#
+# Two sources, in order:
+#
+#   1. THIS machine's known_hosts. If you have already connected, the key is
+#      here and is exactly what your own ssh trusts.
+#   2. ssh-keyscan. Windows OpenSSH is older than the OpenSSH 9.x on a current
+#      Ubuntu and cannot negotiate its preferred KEX, so this fails against
+#      some servers with 'unsupported KEX method' and returns nothing. It is
+#      the fallback, not the primary, for exactly that reason.
+#
+# Be clear about what this buys: both sources are trust-on-first-use. Pinning
+# defeats a FUTURE impostor, which is the realistic threat, but cannot prove
+# the first connection was not already intercepted. Only comparing the
+# fingerprint against the provider's console does that.
+function Get-KnownHostsEntry([string] $HostName) {
+    $kh = Join-Path $env:USERPROFILE '.ssh\known_hosts'
+
+    if (Test-Path $kh) {
+        $found = @(ssh-keygen -F $HostName -f $kh 2>$null |
+            Where-Object { $_ -and $_ -notmatch '^\s*#' })
+        if ($found.Count -gt 0) {
+            return ($found -join "`n")
+        }
+    }
+
+    $scanned = @(ssh-keyscan -H $HostName 2>$null |
+        Where-Object { $_ -and $_ -notmatch '^\s*#' })
+    if ($scanned.Count -gt 0) {
+        return ($scanned -join "`n")
+    }
+
+    return $null
+}
+
 function Set-EnvSecret {
     [CmdletBinding(SupportsShouldProcess)]
     param([string] $Env, [string] $Name, [string] $Value)
@@ -303,10 +341,18 @@ foreach ($env in $Environments) {
 
     # No host yet, so there is nothing real to put here. The deploy job checks
     # for it and fails with a clear message rather than half-deploying.
-    # SSH_KNOWN_HOSTS cannot be generated here: it is the server's own host
-    # key, and the server may not exist yet. Left unset the deploy still runs,
-    # but trusts whatever answers on first connect.
-    Write-Warning '  ! SSH_KNOWN_HOSTS not set - run: ssh-keyscan -H <ip>'
+    # Pin the host key, for any environment that names a real host. Skipped
+    # for a CHANGE-ME placeholder, which has no key to fetch.
+    $sshHost = $variables[$env].SSH_HOST
+    if ($sshHost -and $sshHost -ne 'CHANGE-ME') {
+        $knownHosts = Get-KnownHostsEntry $sshHost
+        if ($knownHosts) {
+            Set-EnvVariable $env 'SSH_KNOWN_HOSTS' $knownHosts
+        } else {
+            Write-Warning "  ! No host key found for $sshHost - the deploy will trust it on first sight."
+            Write-Warning "    Connect once (ssh root@$sshHost) then re-run this script."
+        }
+    }
 
     foreach ($name in $variables[$env].Keys | Sort-Object) {
         Set-EnvVariable $env $name $variables[$env][$name]
@@ -320,11 +366,9 @@ Write-Host ((
     'Next:',
     '  1. Set SSH_HOST to the VPS IP:',
     "       gh variable set SSH_HOST --env production --body '203.0.113.10'",
-    '  2. Pin the host key, so the deploy cannot be tricked into handing',
-    '     its private key to an impostor:',
-    "       ssh-keyscan -H <ip> | gh variable set SSH_KNOWN_HOSTS --env production",
-    '  3. Confirm APP_URL and APP_DOMAIN match the DNS record you created.',
-    '  4. Protect production:',
+    '     then re-run this script so the host key is pinned too.',
+    '  2. Confirm APP_URL, APP_DOMAIN and APP_SERVER_NAME match your DNS.',
+    '  3. Protect production:',
     '       Settings -> Environments -> production -> Required reviewers',
     '',
     'Verify:',
