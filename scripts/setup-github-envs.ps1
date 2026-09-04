@@ -279,6 +279,24 @@ function Set-EnvSecret {
         Write-Warning "  ! $Name is empty - skipped"
         return
     }
+
+    # Refuse to push a dev-grade credential to a deployed environment.
+    #
+    # These values come from the LOCAL .env, which is convenient and is also
+    # the flaw: a password that is fine for a container on your laptop is not
+    # fine on a public host, and nothing otherwise stops it being copied there.
+    # A local DB_PASSWORD of 'secret' was one run away from being production's.
+    #
+    # Skipping rather than failing is deliberate: whatever is already in the
+    # environment is left alone, so a strong value set by hand survives a
+    # re-run instead of being downgraded by it.
+    if ($Name -like '*PASSWORD*' -and $Value.Length -lt 16) {
+        Write-Warning "  ! $Name is only $($Value.Length) characters - NOT pushed."
+        Write-Warning "    Too weak for a deployed environment. Either strengthen it in"
+        Write-Warning "    $EnvFile, or set it directly:"
+        Write-Warning "      gh secret set $Name --env $Env"
+        return
+    }
     if (-not $PSCmdlet.ShouldProcess("$Env/$Name", 'set secret')) { return }
 
     # stdin, not an argument: keeps the value out of shell history and out of
