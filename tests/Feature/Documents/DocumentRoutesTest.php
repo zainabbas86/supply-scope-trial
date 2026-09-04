@@ -8,6 +8,7 @@ use App\Models\Document;
 use App\Models\Extraction;
 use App\Models\User;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
 
 /*
@@ -131,4 +132,51 @@ it('refuses to retry another owner document', function () {
     $this->post(route('documents.retry', $theirs))->assertNotFound();
 
     ExtractLabelData::assertNotPushed();
+});
+
+// -----------------------------------------------------------------------------
+// Downloading the original
+// -----------------------------------------------------------------------------
+//
+// The extraction is a claim ABOUT a file. Serving the file back is what lets
+// anyone check the claim - and it is also the one place the app hands user
+// bytes to a browser, so the headers matter as much as the ownership check.
+
+it('streams the original file back to its owner', function () {
+    Storage::fake('local');
+    $document = Document::factory()->for($this->owner, 'owner')->create([
+        'disk' => 'local',
+        'storage_path' => 'documents/2026/09/abc.pdf',
+        'original_filename' => 'coldwater bay.pdf',
+        'mime_type' => 'application/pdf',
+    ]);
+    Storage::disk('local')->put($document->storage_path, '%PDF-1.4 fake');
+
+    $response = $this->get(route('documents.download', $document));
+
+    $response->assertOk();
+    $response->assertHeader('x-content-type-options', 'nosniff');
+
+    // attachment, never inline. A PDF can carry JavaScript, and rendering one
+    // inline would run it on this origin.
+    expect($response->headers->get('content-disposition'))->toContain('attachment');
+});
+
+it('refuses to download a document belonging to someone else', function () {
+    $theirs = Document::factory()->for($this->other, 'owner')->create();
+
+    // 404, not 403: a 403 confirms the document exists.
+    $this->get(route('documents.download', $theirs))->assertNotFound();
+});
+
+it('404s when the row outlives the file', function () {
+    Storage::fake('local');
+    $document = Document::factory()->for($this->owner, 'owner')->create([
+        'disk' => 'local',
+        'storage_path' => 'documents/2026/09/missing.pdf',
+    ]);
+
+    // A restored database without its volume. The document exists; the bytes
+    // do not, and pretending otherwise gives a 500 instead of an answer.
+    $this->get(route('documents.download', $document))->assertNotFound();
 });

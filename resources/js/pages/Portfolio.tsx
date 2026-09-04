@@ -459,6 +459,14 @@ export default function Portfolio({ contact }: { contact: Contact }) {
                         <div className="space-y-5">
                             <div>
                                 <h3 className="text-sm font-semibold text-neutral-900">
+                                    Masters of Information Technology (Artificial Intelligence); <i>Currently Studying</i>
+                                </h3>
+                                <p className="mt-0.5 text-sm text-neutral-600">
+                                    Queensland University of Technology (Online) · 2026
+                                </p>
+                            </div>
+                            <div>
+                                <h3 className="text-sm font-semibold text-neutral-900">
                                     Graduate Certificate in Data Analytics
                                 </h3>
                                 <p className="mt-0.5 text-sm text-neutral-600">

@@ -23,6 +23,24 @@ export default function Show({ document }: { document: DocumentDetail & { attemp
                     {document.pageCount && ` · ${document.pageCount} pages`}
                     {` · ${(document.sizeBytes / 1024).toFixed(0)} KB`}
                 </span>
+
+                {/*
+                 * A plain <a>, not an Inertia <Link>.
+                 *
+                 * Inertia expects a JSON page object back and would choke on a
+                 * file stream. This has to be an ordinary browser navigation so
+                 * the download handler takes over.
+                 *
+                 * Everything below is a claim the model made ABOUT this file.
+                 * The only way to check a claim is against the source, so the
+                 * source has to be one click away.
+                 */}
+                <a
+                    href={appUrl(`/documents/${document.id}/download`)}
+                    className="text-xs font-medium text-teal-700 underline-offset-4 hover:underline"
+                >
+                    Download original
+                </a>
             </div>
 
             {document.status === 'failed' && (

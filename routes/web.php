@@ -73,6 +73,12 @@ Route::prefix(config('site.app_prefix'))->group(function () {
         Route::get('documents/{document}', [DocumentController::class, 'show'])
             ->name('documents.show');
 
+        // The original file back. Registered BEFORE nothing in particular, but
+        // note it is a distinct path segment rather than a query parameter on
+        // show, so the authorisation is its own explicit check.
+        Route::get('documents/{document}/download', [DocumentController::class, 'download'])
+            ->name('documents.download');
+
         Route::post('documents/{document}/retry', [DocumentController::class, 'retry'])
             ->middleware('throttle:upload')
             ->name('documents.retry');

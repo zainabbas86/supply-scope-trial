@@ -5,6 +5,23 @@ import { appUrl } from '@/lib/url';
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.webp';
 
 /**
+ * The same list, usable in code.
+ *
+ * The `accept` attribute filters the FILE PICKER only. Dropped files never go
+ * through it, so without an explicit check here a dragged-in .exe was accepted,
+ * uploaded in full, and rejected by the server — the user waits for a round
+ * trip to be told something the browser already knew.
+ */
+const ACCEPTED_EXTENSIONS = ACCEPT.split(',').map((e) => e.replace('.', ''));
+
+function extensionOf(filename: string): string {
+    const parts = filename.toLowerCase().split('.');
+
+    // No dot, or a leading-dot file like ".gitignore": no usable extension.
+    return parts.length > 1 ? (parts.pop() ?? '') : '';
+}
+
+/**
  * Multi-file upload.
  *
  * Client-side checks here are a COURTESY, not a control: extension and size are
@@ -39,6 +56,19 @@ export default function FileDropzone({
         }
 
         for (const file of chosen) {
+            const extension = extensionOf(file.name);
+
+            // Checked on the NAME, matching what the server's first gate does.
+            // Neither this nor the server's extension check proves anything
+            // about the contents — the server settles that by sniffing the
+            // file's own bytes and requiring them to agree with the extension.
+            if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+                problems.push(
+                    `${file.name} is not a supported file type. Accepted: ${ACCEPTED_EXTENSIONS.join(', ')}.`,
+                );
+                continue;
+            }
+
             if (file.size > maxFileSizeMb * 1024 * 1024) {
                 problems.push(`${file.name} is larger than ${maxFileSizeMb} MB.`);
             }

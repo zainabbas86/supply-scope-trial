@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -122,5 +122,32 @@ describe('FileDropzone', () => {
         render(<FileDropzone {...props} />);
 
         expect(screen.getByText('Uploading…')).toBeInTheDocument();
+    });
+});
+
+describe('dropped files', () => {
+    // The `accept` attribute filters the file PICKER only. Files arriving via
+    // drag-and-drop never pass through it, so this is the only thing standing
+    // between a dragged .exe and a full upload that the server then rejects.
+    it('rejects an unsupported type dropped onto the zone', async () => {
+        render(<FileDropzone {...props} />);
+
+        const zone = screen.getByRole('button');
+        const bad = file('payload.exe', 1000);
+
+        fireEvent.drop(zone, { dataTransfer: { files: [bad] } });
+
+        expect(await screen.findByText(/not a supported file type/i)).toBeInTheDocument();
+        expect(post).not.toHaveBeenCalled();
+    });
+
+    it('accepts a supported type dropped onto the zone', () => {
+        render(<FileDropzone {...props} />);
+
+        fireEvent.drop(screen.getByRole('button'), {
+            dataTransfer: { files: [file('label.pdf', 1000)] },
+        });
+
+        expect(post).toHaveBeenCalled();
     });
 });

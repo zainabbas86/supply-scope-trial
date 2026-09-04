@@ -13,8 +13,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DocumentController extends Controller
 {
@@ -53,6 +55,50 @@ class DocumentController extends Controller
                 fn (array $d) => in_array($d['status'], ['queued', 'processing'], true)
             ),
         ]);
+    }
+
+    /**
+     * Stream the original uploaded file back to its owner.
+     *
+     * Nothing deletes uploads, so the bytes behind every row are still there.
+     * The value of this is that the extraction is a claim ABOUT a document —
+     * "allergens: milk, soy" — and the only way to check a claim is against
+     * the source. Without this the UI asks you to take the model's word.
+     *
+     * Three things make serving user-uploaded bytes safe here:
+     *
+     *  1. Ownership is checked by the same gate as `show`, so a foreign id is
+     *     a 404 rather than a 403 — a 403 would confirm the document exists.
+     *  2. `Content-Disposition: attachment` means the browser saves the file
+     *     instead of rendering it. A PDF can contain JavaScript, and rendering
+     *     one inline on this origin would run it there.
+     *  3. `X-Content-Type-Options: nosniff` stops the browser second-guessing
+     *     the type and rendering it as something executable anyway.
+     *
+     * The Content-Type comes from `mime_type`, which was SNIFFED FROM THE
+     * FILE'S OWN BYTES at upload (see UploadDocuments), never from the browser
+     * or the extension. Echoing back a client-supplied type would hand an
+     * attacker the ability to choose how their file is interpreted.
+     */
+    public function download(Document $document): StreamedResponse
+    {
+        Gate::authorize('view', $document);
+
+        $disk = Storage::disk($document->disk);
+
+        // The row can outlive the file: a restored database, a volume that was
+        // not restored with it. 404 is honest — the document exists, the bytes
+        // do not.
+        abort_unless($disk->exists($document->storage_path), 404);
+
+        return $disk->download(
+            $document->storage_path,
+            $document->original_filename,
+            [
+                'Content-Type' => $document->mime_type,
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
     }
 
     public function show(Document $document): Response
