@@ -1,0 +1,110 @@
+# =============================================================================
+# Production overlay.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# The -f flags are not optional. Naming files explicitly ALSO stops Compose
+# auto-loading docker-compose.override.yml, which bind-mounts host source over
+# the image and would replace the deployed code with whatever happens to be in
+# the deploy directory.
+#
+# What changes from the base file:
+#   - the image is PULLED from ghcr.io, never built here
+#   - web answers on a real domain over TLS on 80/443
+#   - nothing else is published; postgres and redis stay on loopback
+#
+# What deliberately does not change: the topology. Same image, same two roles,
+# same shared volume. If this file had to restate the architecture, the base
+# file would not be describing a deployment.
+# =============================================================================
+
+services:
+    web:
+        # Digest, not tag, in the real deploy: deploy.yml substitutes the exact
+        # image that passed CI. A tag can move; a digest cannot, and "the thing
+        # we tested" and "the thing running" have to be the same bytes.
+        image: ${APP_IMAGE:?APP_IMAGE must be set, e.g. ghcr.io/owner/repo@sha256:...}
+        pull_policy: always
+
+        environment:
+            # A bare domain, not ":8080". This is the whole TLS story:
+            # FrankenPHP is Caddy, so given a real hostname it requests a
+            # Let's Encrypt certificate on first request and renews it for
+            # ever. No certbot, no cron, no nginx, no renewal that expires
+            # quietly eighteen months from now.
+            #
+            # Requirements, all of which must hold before the first request:
+            #   - the domain's A record already resolves to this host
+            #   - ports 80 and 443 reachable from the internet
+            # Caddy proves control of the domain over port 80, so blocking it
+            # and keeping only 443 open means no certificate is ever issued.
+            #
+            # APP_SERVER_NAME, not APP_DOMAIN, because this may be SEVERAL
+            # names. `www` is typically a CNAME to the apex, so it resolves
+            # here whether or not anyone planned for it — and a name Caddy has
+            # no certificate for is a browser-level TLS error, not a 404. Every
+            # hostname that reaches this box belongs in this list.
+            #
+            # Space-separated, e.g. "example.com www.example.com".
+            SERVER_NAME: ${APP_SERVER_NAME:?APP_SERVER_NAME must be set, e.g. "example.com www.example.com"}
+
+        ports:
+            # Real ports, bound on every interface, which is correct here and
+            # only here. The frankenphp binary carries cap_net_bind_service, so
+            # the non-root `app` user binds these directly — no root, no
+            # port-translation, and redirects that point at the port the
+            # visitor actually used.
+            #
+            # 80 is not redundant next to 443: it serves the ACME HTTP-01
+            # challenge and redirects human traffic to HTTPS.
+            #
+            # The base file's loopback 8080 mapping is still merged in (Compose
+            # concatenates port lists). It is inert — Caddy listens on 80/443
+            # once SERVER_NAME is a domain — and it is on 127.0.0.1, so it is
+            # not reachable from outside regardless.
+            - "80:80"
+            - "443:443"
+
+        healthcheck:
+            # The base probe hits :8080, which nothing listens on here.
+            #
+            # --resolve pins the domain to loopback, so this exercises the real
+            # Caddy pipeline and the real certificate without leaving the host
+            # or depending on external DNS. A plain `curl localhost` would skip
+            # TLS entirely and report healthy on a broken certificate.
+            #
+            # APP_DOMAIN here, not APP_SERVER_NAME: this needs the ONE canonical
+            # hostname. A space-separated list would be a malformed URL.
+            test:
+                [
+                    "CMD",
+                    "curl",
+                    "-fsS",
+                    "-o",
+                    "/dev/null",
+                    "--resolve",
+                    "${APP_DOMAIN}:443:127.0.0.1",
+                    "https://${APP_DOMAIN}/up",
+                ]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            # Generous: the very first start also provisions a certificate,
+            # which involves a round trip to Let's Encrypt.
+            start_period: 120s
+
+        volumes:
+            # Restated because a volume list REPLACES rather than merges when
+            # the service is redefined. Omit it and the worker silently loses
+            # access to every uploaded file.
+            - storage-data:/app/storage/app/private/documents
+
+    worker:
+        image: ${APP_IMAGE:?APP_IMAGE must be set}
+        pull_policy: always
+        volumes:
+            - storage-data:/app/storage/app/private/documents
+
+    migrate:
+        image: ${APP_IMAGE:?APP_IMAGE must be set}
+        pull_policy: always

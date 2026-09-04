@@ -8,12 +8,10 @@ name: Deploy
 # production. Rebuilding per environment would mean the thing you tested is not
 # the thing you shipped.
 #
-# HONEST STATUS: nothing is hosted yet. Everything up to and including "publish
-# the image" runs for real today. The `Release` step in each environment is the
-# single place a host command goes, and it is deliberately left as one explicit
-# line rather than a plausible-looking script that does nothing — a deploy that
-# silently succeeds without deploying is worse than one that is obviously
-# unwired.
+# The target is a single Docker host reached over SSH: the image is pulled from
+# ghcr.io, migrations run once, then the containers are replaced. That is the
+# whole deploy. No agent on the box, nothing to install, and the same three
+# commands you would run by hand if the workflow did not exist.
 # =============================================================================
 
 on:
@@ -97,54 +95,140 @@ jobs:
             name: ${{ inputs.environment || 'production' }}
             url: ${{ vars.APP_URL }}
 
+        env:
+            # The DIGEST, not the tag. A tag can be moved to point at different
+            # bytes; a digest cannot. "What we tested" and "what is running"
+            # have to be the same content, and this is what guarantees it.
+            APP_IMAGE: ${{ needs.build.outputs.digest && format('{0}/{1}@{2}', 'ghcr.io', github.repository, needs.build.outputs.digest) }}
+            SSH_HOST: ${{ vars.SSH_HOST }}
+            SSH_USER: ${{ vars.SSH_USER || 'root' }}
+            SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+            DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/srv/supplyscope' }}
+
         steps:
             - uses: actions/checkout@v4
 
             - name: Show what is being deployed
               run: |
                   echo "environment : ${{ inputs.environment || 'production' }}"
-                  echo "image       : ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ needs.build.outputs.tag }}"
-                  echo "digest      : ${{ needs.build.outputs.digest }}"
+                  echo "image       : ${APP_IMAGE}"
+                  echo "host        : ${SSH_USER}@${SSH_HOST}:${SSH_PORT}"
+                  echo "directory   : ${DEPLOY_DIR}"
 
             # -----------------------------------------------------------------
-            # Release steps, in the order they must run.
+            # Fail before touching the host if anything is missing, rather than
+            # deploying an app that cannot boot or has no way in.
             #
-            # Migrations run ONCE, as a release command, before the new image
-            # takes traffic — never on container boot, which races across
-            # replicas. `app:ensure-admin` is idempotent and safe to re-run.
+            # `[ -z "$x" ] && missing=...` would abort the step the moment a
+            # value IS present: the test returns non-zero and Actions runs every
+            # step under `bash -e`. An explicit `if` is the difference between a
+            # check and a landmine.
             #
-            # The one line to fill in per host:
-            #   Fly.io    flyctl deploy --image $IMAGE --app $FLY_APP
-            #   Render    curl -X POST "$RENDER_DEPLOY_HOOK"
-            #   Cloud Run gcloud run deploy $SERVICE --image $IMAGE
-            #
-            # Every secret is read from the GitHub ENVIRONMENT, not the repo and
-            # not `.env.example`.
-            #
-            # That is what makes uat, staging and production independent: each
-            # holds its own credentials, each can be rotated without touching
-            # the code, and a UAT credential is unreadable from a production job.
-            #
-            # Required per environment (Settings → Environments → Secrets):
-            #   APP_KEY  DB_PASSWORD  REDIS_PASSWORD  OPENAI_API_KEY
-            #   ADMIN_PASSWORD  DEPLOY_TOKEN
-            #
-            # ADMIN_PASSWORD is passed through to `app:ensure-admin`, which is
-            # idempotent — so rotating a password is: change the secret, re-run
-            # this workflow. There is deliberately no in-app password change;
-            # the account is provisioned, not self-managed.
+            # ${!v} is bash indirect expansion — no eval, so a secret containing
+            # shell metacharacters cannot be executed.
             # -----------------------------------------------------------------
-            - name: Release
+            - name: Check the environment is fully configured
               env:
-                  IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE }}@${{ needs.build.outputs.digest }}
-                  DEPLOY_TOKEN: ${{ secrets.DEPLOY_TOKEN }}
+                  APP_KEY: ${{ secrets.APP_KEY }}
+                  DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+                  REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+                  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+                  ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+                  SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+                  APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+                  APP_URL: ${{ vars.APP_URL }}
+              run: |
+                  missing=""
+                  for v in APP_KEY DB_PASSWORD REDIS_PASSWORD OPENAI_API_KEY \
+                           ADMIN_PASSWORD SSH_PRIVATE_KEY; do
+                    if [ -z "${!v}" ]; then missing="$missing $v"; fi
+                  done
+                  if [ -n "$missing" ]; then
+                    echo "::error::Missing SECRETS for this environment:$missing"
+                    echo "Settings → Environments → ${{ inputs.environment || 'production' }} → Secrets"
+                    exit 1
+                  fi
+
+                  missing=""
+                  for v in SSH_HOST APP_DOMAIN APP_URL; do
+                    if [ -z "${!v}" ]; then missing="$missing $v"; fi
+                  done
+                  if [ -n "$missing" ]; then
+                    echo "::error::Missing VARIABLES for this environment:$missing"
+                    echo "Settings → Environments → ${{ inputs.environment || 'production' }} → Variables"
+                    exit 1
+                  fi
+
+                  # A CHANGE-ME left in place deploys a stack that points at
+                  # nothing and fails much further along, where the error no
+                  # longer names the cause.
+                  if [ "${SSH_HOST}" = "CHANGE-ME" ] || [ "${APP_DOMAIN}" = "CHANGE-ME" ]; then
+                    echo "::error::SSH_HOST or APP_DOMAIN is still the CHANGE-ME placeholder."
+                    exit 1
+                  fi
+
+            # -----------------------------------------------------------------
+            # SSH_KNOWN_HOSTS pins the server's host key so this job cannot be
+            # talked into handing its private key to an impostor. Get it once,
+            # from a machine you trust:
+            #
+            #   ssh-keyscan -H <ip>
+            #
+            # and paste the output into the environment variable. Without it we
+            # fall back to trust-on-first-use, which is what every tutorial does
+            # and is a real (if unlikely) hole — so it warns rather than
+            # pretending to be secure.
+            # -----------------------------------------------------------------
+            - name: Authorise SSH
+              env:
+                  SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+                  SSH_KNOWN_HOSTS: ${{ vars.SSH_KNOWN_HOSTS }}
+              run: |
+                  # umask before writing: a private key that is briefly
+                  # world-readable is a private key that leaked.
+                  umask 077
+                  mkdir -p ~/.ssh
+
+                  printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+                  chmod 600 ~/.ssh/id_deploy
+
+                  if [ -n "$SSH_KNOWN_HOSTS" ]; then
+                    printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+                  else
+                    echo "::warning::SSH_KNOWN_HOSTS is not set - trusting the host key on first sight."
+                    ssh-keyscan -p "${SSH_PORT}" -H "${SSH_HOST}" >> ~/.ssh/known_hosts 2>/dev/null
+                  fi
+                  chmod 600 ~/.ssh/known_hosts
+
+                  cat > ~/.ssh/config <<CONFIG
+                  Host target
+                      HostName ${SSH_HOST}
+                      User ${SSH_USER}
+                      Port ${SSH_PORT}
+                      IdentityFile ~/.ssh/id_deploy
+                      IdentitiesOnly yes
+                      StrictHostKeyChecking yes
+                  CONFIG
+                  chmod 600 ~/.ssh/config
+
+                  ssh target 'echo "connected to $(hostname) as $(whoami)"'
+
+            # -----------------------------------------------------------------
+            # The .env is built HERE and piped over stdin, never passed as an
+            # ssh argument: arguments are visible in the remote process list to
+            # any other user on the box, and land in shell history.
+            #
+            # printf '%s\n' with the value quoted, rather than a heredoc with
+            # expansion, so a password containing $ ` or \ is written literally.
+            # -----------------------------------------------------------------
+            - name: Compose the environment file
+              env:
                   APP_KEY: ${{ secrets.APP_KEY }}
                   DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
                   REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
                   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
                   ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
 
-                  # ---------------------------------------------------------
                   # VARIABLES, not secrets: non-sensitive config that differs
                   # per environment. Visible in run logs, which is exactly what
                   # you want when diagnosing "why did production behave
@@ -152,79 +236,120 @@ jobs:
                   #
                   # The test is not "is this config?" but "would seeing it in a
                   # log matter?". Anything IDENTICAL across environments belongs
-                  # in config/ or .env.example instead: putting it here creates
-                  # three copies that drift.
-                  # ---------------------------------------------------------
-                  APP_ENV: ${{ vars.APP_ENV }}
+                  # in config/ or .env.example instead.
+                  APP_ENV: ${{ vars.APP_ENV || 'production' }}
                   APP_URL: ${{ vars.APP_URL }}
-                  APP_DEBUG: ${{ vars.APP_DEBUG }}
-                  LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+                  APP_DEBUG: ${{ vars.APP_DEBUG || 'false' }}
+                  APP_DOMAIN: ${{ vars.APP_DOMAIN }}
 
-                  DB_HOST: ${{ vars.DB_HOST }}
-                  DB_PORT: ${{ vars.DB_PORT }}
-                  DB_DATABASE: ${{ vars.DB_DATABASE }}
-                  DB_USERNAME: ${{ vars.DB_USERNAME }}
+                  # Every hostname that resolves to this box, space-separated.
+                  # Caddy needs a certificate for each; a name it does not know
+                  # is a browser TLS error, not a 404. `www` is usually a CNAME
+                  # to the apex, so it arrives here whether or not it was
+                  # planned for. Defaults to the single canonical domain.
+                  APP_SERVER_NAME: ${{ vars.APP_SERVER_NAME || vars.APP_DOMAIN }}
 
-                  REDIS_HOST: ${{ vars.REDIS_HOST }}
-                  REDIS_PORT: ${{ vars.REDIS_PORT }}
+                  LOG_LEVEL: ${{ vars.LOG_LEVEL || 'warning' }}
+                  DB_DATABASE: ${{ vars.DB_DATABASE || 'label_extractor' }}
+                  DB_USERNAME: ${{ vars.DB_USERNAME || 'label_extractor' }}
+                  ADMIN_USERNAME: ${{ vars.ADMIN_USERNAME || 'admin' }}
 
                   # The worker reads the file the web container wrote, so this
                   # disk MUST be reachable from both. On a single host they
-                  # share a docker volume and `local` is correct.
-                  #
-                  # `s3` would need league/flysystem-aws-s3-v3, which is not
-                  # installed — it is only worth adding if web and worker are
-                  # ever split across machines. The AWS_* variables stay wired
-                  # so that switch is a package install, not a workflow edit.
-                  FILESYSTEM_DISK: ${{ vars.FILESYSTEM_DISK }}
-                  AWS_BUCKET: ${{ vars.AWS_BUCKET }}
-                  AWS_DEFAULT_REGION: ${{ vars.AWS_DEFAULT_REGION }}
-
-                  OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+                  # share a docker volume and `local` is correct. `s3` would
+                  # need league/flysystem-aws-s3-v3, which is not installed.
+                  FILESYSTEM_DISK: ${{ vars.FILESYSTEM_DISK || 'local' }}
+                  OPENAI_MODEL: ${{ vars.OPENAI_MODEL || 'gpt-5.5' }}
 
                   # Deliberately per-environment: a low ceiling in uat means a
                   # runaway test cannot spend production's budget.
-                  EXTRACTION_DAILY_LIMIT: ${{ vars.EXTRACTION_DAILY_LIMIT }}
+                  EXTRACTION_DAILY_LIMIT: ${{ vars.EXTRACTION_DAILY_LIMIT || '100' }}
               run: |
-                  # Fail before touching the host if a secret is missing, rather
-                  # than deploying an app that cannot boot or has no way in.
-                  # `[ -z "$x" ] && assign` would abort the step the moment a
-                  # secret IS present: the test returns non-zero, and Actions
-                  # runs every step under `bash -e`. An explicit `if` is the
-                  # difference between a check and a landmine.
-                  #
-                  # ${!v} is bash indirect expansion — no eval, so a secret
-                  # containing shell metacharacters cannot be executed.
-                  missing=""
-                  for v in APP_KEY DB_PASSWORD REDIS_PASSWORD OPENAI_API_KEY ADMIN_PASSWORD; do
-                    if [ -z "${!v}" ]; then
-                      missing="$missing $v"
-                    fi
-                  done
+                  umask 077
+                  {
+                    printf 'APP_NAME=%s\n'   "Label Extraction Agent"
+                    printf 'APP_ENV=%s\n'    "$APP_ENV"
+                    printf 'APP_KEY=%s\n'    "$APP_KEY"
+                    printf 'APP_DEBUG=%s\n'  "$APP_DEBUG"
+                    printf 'APP_URL=%s\n'    "$APP_URL"
+                    printf 'LOG_CHANNEL=%s\n' "stderr"
+                    printf 'LOG_LEVEL=%s\n'  "$LOG_LEVEL"
 
-                  if [ -n "$missing" ]; then
-                    echo "::error::Missing secrets for this environment:$missing"
-                    echo "Set them under Settings → Environments → ${{ inputs.environment || 'production' }}."
-                    exit 1
-                  fi
+                    printf 'DB_CONNECTION=%s\n' "pgsql"
+                    printf 'DB_DATABASE=%s\n'   "$DB_DATABASE"
+                    printf 'DB_USERNAME=%s\n'   "$DB_USERNAME"
+                    printf 'DB_PASSWORD=%s\n'   "$DB_PASSWORD"
 
-                  if [ -z "${DEPLOY_TOKEN}" ]; then
-                    echo "::error::No DEPLOY_TOKEN configured for this environment."
-                    echo "The image is published and ready at: ${IMAGE}"
-                    echo "Add the host command to this step and set DEPLOY_TOKEN"
-                    echo "under Settings → Environments to complete the deploy."
-                    exit 1
-                  fi
+                    printf 'REDIS_PASSWORD=%s\n' "$REDIS_PASSWORD"
+                    printf 'QUEUE_CONNECTION=%s\n' "redis"
+                    printf 'CACHE_STORE=%s\n'     "redis"
+                    printf 'SESSION_DRIVER=%s\n'  "redis"
 
-                  echo "::error::Deploy target not yet configured."
-                  echo "Add the provider command for this environment here."
-                  exit 1
+                    printf 'FILESYSTEM_DISK=%s\n' "$FILESYSTEM_DISK"
+                    printf 'OPENAI_API_KEY=%s\n'  "$OPENAI_API_KEY"
+                    printf 'OPENAI_MODEL=%s\n'    "$OPENAI_MODEL"
+                    printf 'EXTRACTION_DAILY_LIMIT=%s\n' "$EXTRACTION_DAILY_LIMIT"
 
-            # Runs only once the Release step above is wired up and succeeds.
+                    printf 'ADMIN_USERNAME=%s\n' "$ADMIN_USERNAME"
+                    printf 'ADMIN_PASSWORD=%s\n' "$ADMIN_PASSWORD"
+
+                    # Read by docker-compose.prod.yml, not by Laravel.
+                    printf 'APP_IMAGE=%s\n'  "$APP_IMAGE"
+                    printf 'APP_DOMAIN=%s\n' "$APP_DOMAIN"
+                    printf 'APP_SERVER_NAME=%s\n' "$APP_SERVER_NAME"
+                  } > deploy.env
+
+                  echo "wrote $(grep -c '=' deploy.env) settings (values not shown)"
+
+            - name: Ship compose files and environment
+              run: |
+                  ssh target "mkdir -p '${DEPLOY_DIR}'"
+                  scp docker-compose.yml docker-compose.prod.yml "target:${DEPLOY_DIR}/"
+
+                  # Over stdin, so no secret is ever an argv entry. umask on the
+                  # far side means the file is 600 from the instant it exists.
+                  ssh target "umask 077 && cat > '${DEPLOY_DIR}/.env'" < deploy.env
+
+            # -----------------------------------------------------------------
+            # Migrations run ONCE, before the new containers take traffic —
+            # never on container boot, which races across replicas.
+            # `app:ensure-admin` is idempotent, so rotating the admin password
+            # is: change the secret, re-run this workflow.
+            #
+            # Both use the `migrate` service: it carries no ports and is behind
+            # the `cli` profile, so `up -d` never starts it.
+            # -----------------------------------------------------------------
+            - name: Release
+              run: |
+                  ssh target bash -euo pipefail -s <<REMOTE
+                  cd '${DEPLOY_DIR}'
+
+                  # -f twice, always. Naming files explicitly also stops Compose
+                  # auto-loading docker-compose.override.yml, which would bind
+                  # mount host directories over the image.
+                  COMPOSE="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+
+                  \$COMPOSE pull
+                  \$COMPOSE up -d postgres redis
+                  \$COMPOSE run --rm migrate
+                  \$COMPOSE run --rm migrate php artisan app:ensure-admin
+                  \$COMPOSE up -d --remove-orphans
+
+                  # 50 GB fills faster than you would think when every deploy
+                  # leaves its predecessor behind.
+                  docker image prune -f
+                  \$COMPOSE ps
+                  REMOTE
+
             - name: Smoke test
-              if: success()
               run: |
                   # A deploy that reports success without the app answering is
-                  # not a success. /up is Laravel's health endpoint.
-                  curl --fail --silent --show-error --retry 5 --retry-delay 5 \
-                       "${{ vars.APP_URL }}/up"
+                  # not a success. The retries cover the first boot, where Caddy
+                  # is still obtaining a certificate.
+                  curl --fail --silent --show-error --retry 10 --retry-delay 6 \
+                       --retry-connrefused "${{ vars.APP_URL }}/up"
+                  echo "  /up answered"
+
+            - name: Clean up credentials
+              if: always()
+              run: rm -f ~/.ssh/id_deploy deploy.env

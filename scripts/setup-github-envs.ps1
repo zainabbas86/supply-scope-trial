@@ -39,7 +39,15 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string[]] $Environments = @('uat', 'staging', 'production'),
-    [string]   $EnvFile = '.env'
+    [string]   $EnvFile = '.env',
+
+    # The PRIVATE half of the key whose public half is in the VPS's
+    # authorized_keys. GitHub Actions uses it to SSH in and deploy.
+    #
+    # Note the file has no .pub extension. ssh wants the PRIVATE key and derives
+    # the public one; pointing any IdentityFile at a .pub is a common slip that
+    # fails with "Permission denied (publickey)" and no hint as to why.
+    [string]   $SshKeyPath = "$env:USERPROFILE\.ssh\hostinger_zainabbas_vps"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,11 +111,22 @@ if ([string]::IsNullOrWhiteSpace($openAiKey)) {
 # masked and write-only.
 # -----------------------------------------------------------------------------
 
+# The deploy key. Read from disk rather than from .env: a multi-line PEM does
+# not survive a dotenv file, and the private key has no business being there.
+$sshKey = $null
+if (Test-Path $SshKeyPath) {
+    $sshKey = (Get-Content $SshKeyPath -Raw)
+} else {
+    Write-Warning "No SSH key at $SshKeyPath - SSH_PRIVATE_KEY will be skipped."
+    Write-Warning "  ssh-keygen -t ed25519 -C 'supplyscope-vps' -f '$SshKeyPath'"
+}
+
 $sharedSecrets = @{
-    DB_PASSWORD    = (Get-EnvValue 'DB_PASSWORD')
-    REDIS_PASSWORD = (Get-EnvValue 'REDIS_PASSWORD')
-    ADMIN_PASSWORD = (Get-EnvValue 'ADMIN_PASSWORD')
-    OPENAI_API_KEY = $openAiKey
+    DB_PASSWORD     = (Get-EnvValue 'DB_PASSWORD')
+    REDIS_PASSWORD  = (Get-EnvValue 'REDIS_PASSWORD')
+    ADMIN_PASSWORD  = (Get-EnvValue 'ADMIN_PASSWORD')
+    OPENAI_API_KEY  = $openAiKey
+    SSH_PRIVATE_KEY = $sshKey
 }
 
 # Non-sensitive, and genuinely different per environment. Anything IDENTICAL
@@ -124,13 +143,22 @@ $sharedSecrets = @{
 # It becomes 's3' only if web and worker are ever split across machines - a
 # platform where volumes attach to one machine (Fly, Render, Cloud Run). That is
 # a package install and a bucket, not a config flip.
+#
+# There are no DB_HOST / DB_PORT / REDIS_HOST / REDIS_PORT variables.
+#
+# They used to be here and they were dead: docker-compose.yml overrides all
+# four to the compose service names, because that is the only thing that works
+# on a single host. A variable that looks like configuration but changes
+# nothing is worse than an absent one - someone eventually edits it, sees no
+# effect, and goes looking for the bug somewhere real.
 $variables = @{
     uat = @{
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'debug'
-        APP_URL = 'https://uat.example.com'
-        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+        APP_URL = 'https://uat.example.com'; APP_DOMAIN = 'uat.example.com'
+        SSH_HOST = 'CHANGE-ME'; SSH_USER = 'root'; SSH_PORT = '22'
+        DEPLOY_DIR = '/srv/supplyscope'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
-        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        ADMIN_USERNAME = 'admin'
         FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         # A low ceiling here means a runaway test cannot spend production budget.
@@ -138,10 +166,11 @@ $variables = @{
     }
     staging = @{
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'info'
-        APP_URL = 'https://staging.example.com'
-        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+        APP_URL = 'https://staging.example.com'; APP_DOMAIN = 'staging.example.com'
+        SSH_HOST = 'CHANGE-ME'; SSH_USER = 'root'; SSH_PORT = '22'
+        DEPLOY_DIR = '/srv/supplyscope'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
-        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        ADMIN_USERNAME = 'admin'
         FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         EXTRACTION_DAILY_LIMIT = '100'
@@ -151,10 +180,27 @@ $variables = @{
         # debug pages and enables production error handling. "Which deployment
         # is this?" is answered by APP_URL, not by pretending uat is local.
         APP_ENV = 'production'; APP_DEBUG = 'false'; LOG_LEVEL = 'warning'
-        APP_URL = 'https://example.com'
-        DB_HOST = 'CHANGE-ME'; DB_PORT = '5432'
+
+        # Three forms of the same host, and they are not interchangeable:
+        #   APP_URL         what Laravel builds absolute links with - needs
+        #                   the scheme
+        #   APP_DOMAIN      the ONE canonical hostname, used for the health
+        #                   probe's URL - must not have a scheme
+        #   APP_SERVER_NAME every hostname Caddy should hold a certificate
+        #                   for, space-separated
+        #
+        # www is a CNAME to the apex, so it resolves to this box whether or not
+        # anyone intended it. Leaving it out of APP_SERVER_NAME does not give
+        # visitors a 404 - it gives them a browser TLS warning, which is worse
+        # and looks broken.
+        APP_URL = 'https://zainabbas.com.au'
+        APP_DOMAIN = 'zainabbas.com.au'
+        APP_SERVER_NAME = 'zainabbas.com.au www.zainabbas.com.au'
+
+        SSH_HOST = '31.97.71.13'; SSH_USER = 'root'; SSH_PORT = '22'
+        DEPLOY_DIR = '/srv/supplyscope'
         DB_DATABASE = 'label_extractor'; DB_USERNAME = 'label_extractor'
-        REDIS_HOST = 'CHANGE-ME'; REDIS_PORT = '6379'
+        ADMIN_USERNAME = 'admin'
         FILESYSTEM_DISK = 'local'
         OPENAI_MODEL = 'gpt-5.5'
         EXTRACTION_DAILY_LIMIT = '500'
@@ -165,7 +211,14 @@ $variables = @{
 # Helpers
 # -----------------------------------------------------------------------------
 
-function Set-EnvSecret([string] $Env, [string] $Name, [string] $Value) {
+# SupportsShouldProcess on the FUNCTION, not only on the script. Without it
+# $PSCmdlet here resolves to the script's, through dynamic scoping - which
+# happens to work and is not something to rely on. Declared, each function has
+# its own, and -WhatIf still reaches it through $WhatIfPreference.
+function Set-EnvSecret {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string] $Env, [string] $Name, [string] $Value)
+
     if ([string]::IsNullOrWhiteSpace($Value)) {
         Write-Warning "  ! $Name is empty - skipped"
         return
@@ -179,7 +232,10 @@ function Set-EnvSecret([string] $Env, [string] $Name, [string] $Value) {
     Write-Host "  secret   $Name"
 }
 
-function Set-EnvVariable([string] $Env, [string] $Name, [string] $Value) {
+function Set-EnvVariable {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string] $Env, [string] $Name, [string] $Value)
+
     if (-not $PSCmdlet.ShouldProcess("$Env/$Name", 'set variable')) { return }
 
     gh variable set $Name --env $Env --body $Value | Out-Null
@@ -213,7 +269,10 @@ foreach ($env in $Environments) {
 
     # No host yet, so there is nothing real to put here. The deploy job checks
     # for it and fails with a clear message rather than half-deploying.
-    Write-Warning '  ! DEPLOY_TOKEN not set - add it once a host exists'
+    # SSH_KNOWN_HOSTS cannot be generated here: it is the server's own host
+    # key, and the server may not exist yet. Left unset the deploy still runs,
+    # but trusts whatever answers on first connect.
+    Write-Warning '  ! SSH_KNOWN_HOSTS not set - run: ssh-keyscan -H <ip>'
 
     foreach ($name in $variables[$env].Keys | Sort-Object) {
         Set-EnvVariable $env $name $variables[$env][$name]
@@ -225,10 +284,13 @@ Write-Host ((
     'Done.',
     '',
     'Next:',
-    '  1. Replace every CHANGE-ME variable with the real managed-service value:',
-    "       gh variable set DB_HOST --env production --body 'db.internal'",
-    '  2. Add DEPLOY_TOKEN per environment once a host exists.',
-    '  3. Protect production:',
+    '  1. Set SSH_HOST to the VPS IP:',
+    "       gh variable set SSH_HOST --env production --body '203.0.113.10'",
+    '  2. Pin the host key, so the deploy cannot be tricked into handing',
+    '     its private key to an impostor:',
+    "       ssh-keyscan -H <ip> | gh variable set SSH_KNOWN_HOSTS --env production",
+    '  3. Confirm APP_URL and APP_DOMAIN match the DNS record you created.',
+    '  4. Protect production:',
     '       Settings -> Environments -> production -> Required reviewers',
     '',
     'Verify:',

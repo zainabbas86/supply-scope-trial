@@ -293,25 +293,68 @@ provisioned, not self-managed.
 
 ## Deployment
 
-**Nothing is currently hosted.** Deploy-readiness was still a hard design goal, so what
-remains is configuration rather than architecture — see
-[DECISIONS.md §4](DECISIONS.md#4-deployment-posture) for the detail.
+The target is a **single Docker host** — one small VPS running the same Compose topology as
+development. GitHub Actions builds the image, pushes it to GHCR, then connects over SSH and
+replaces the containers. There is no agent on the server and nothing to install beyond
+Docker itself: the deploy runs the same three commands you would run by hand.
 
-The image and Compose file map 1:1 onto Fly.io, Render, Railway or Cloud Run: one web
-service and one worker service **from the same image**, managed Postgres and Redis, S3 or
-GCS for `FILESYSTEM_DISK`, and migrations as a release command. Nothing is hardcoded, logs
-go to stdout, and `config:cache` is deliberately not run at build time — that would bake
-build-time environment values into the image.
+```
+push tag v*  ->  build image  ->  push to ghcr.io  ->  ssh  ->  pull, migrate, up -d
+```
 
-The deploy workflow is wired as far as it honestly can be without a host: it builds and
-publishes the image to GHCR for real, and each environment has a single explicit `Release`
-step where the provider command goes (`flyctl deploy --image …`, a Render deploy hook, or
-`gcloud run deploy`). That step **fails loudly rather than reporting a success it did not
-achieve** — a green deploy that deployed nothing is worse than an obvious red one.
+**The image is promoted by digest, not by tag.** A tag can be moved to point at different
+bytes; a digest cannot. What CI tested and what production runs are the same content.
 
-Still required before a real deployment: a secret store rather than environment strings, a
-readiness probe that checks Postgres and Redis rather than only liveness, and somewhere for
-logs and queue-depth metrics to go.
+### One-time server setup
+
+```bash
+ssh root@<ip>
+curl -fsSL https://get.docker.com | sh     # Ubuntu 24.04 has no Docker by default
+mkdir -p /srv/supplyscope
+```
+
+That is the whole preparation. The workflow ships `docker-compose.yml`,
+`docker-compose.prod.yml` and a generated `.env` on every deploy, so nothing else needs to
+exist on the box — and nothing on it is hand-edited state that a rebuild would lose.
+
+Open **only 22, 80 and 443** in the provider firewall. Postgres and Redis publish on
+`127.0.0.1` only ([docker-compose.yml](docker-compose.yml)), which matters more than the
+firewall does: Docker publishes ports by writing iptables rules that **bypass ufw**, so a
+`0.0.0.0` binding would be internet-reachable even with a host firewall configured to deny
+it.
+
+### TLS
+
+There is no certbot and no nginx. FrankenPHP is Caddy, so setting `SERVER_NAME` to a real
+hostname is the entire configuration — it obtains a Let's Encrypt certificate on first
+request and renews it indefinitely.
+
+Two things must be true before that first request, or issuance fails: the domain must
+already resolve to the host, and **port 80 must be reachable**. Caddy proves control of the
+domain over HTTP, so closing 80 and keeping only 443 means no certificate is ever issued.
+
+### Configuring an environment
+
+`.env` is never copied from a developer machine. It is generated per deploy from GitHub
+Environment secrets and variables, written over stdin so no credential appears in an `ssh`
+argument or the remote process list, and is `600` from the moment it exists.
+
+```powershell
+./scripts/setup-github-envs.ps1 -WhatIf     # preview
+./scripts/setup-github-envs.ps1             # apply
+gh variable set SSH_HOST --env production --body '203.0.113.10'
+ssh-keyscan -H <ip> | gh variable set SSH_KNOWN_HOSTS --env production
+```
+
+`SSH_KNOWN_HOSTS` pins the server's host key. Without it the deploy falls back to
+trust-on-first-use — it still works, and it warns, because a job that hands a private key
+to whatever answers is a real hole rather than a theoretical one.
+
+### Still missing for a system with real users
+
+A dedicated secret store rather than environment strings; a readiness probe that checks
+Postgres and Redis rather than only liveness; somewhere for logs and queue-depth metrics to
+go; and a retention policy for uploaded files, which currently grow without bound.
 
 ## What was cut, and why
 
