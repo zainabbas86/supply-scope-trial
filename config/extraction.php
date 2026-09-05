@@ -65,9 +65,15 @@ return [
     | Recorded on every attempt so a bad batch of results can be attributed to
     | the prompt change that caused it.
     |
+    | v2 adds the prompt-injection framing: the uploaded file is treated
+    | explicitly as untrusted DATA rather than as instructions, and the model
+    | is told to flag rather than obey anything in it that looks addressed to
+    | it. v1 is kept rather than edited so results extracted under it stay
+    | attributable — every attempt row records the version that produced it.
+    |
     */
 
-    'prompt_version' => env('EXTRACTION_PROMPT_VERSION', 'v1'),
+    'prompt_version' => env('EXTRACTION_PROMPT_VERSION', 'v2'),
     'schema_version' => 1,
 
 ];

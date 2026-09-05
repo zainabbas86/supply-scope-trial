@@ -11,6 +11,7 @@ use App\Models\Document;
 use App\Models\User;
 use App\Support\CurrentOwner;
 use App\Support\DailySpendCeiling;
+use App\Support\InjectionScanner;
 use App\Support\PdfInspector;
 use finfo;
 use Illuminate\Database\Eloquent\Model;
@@ -40,6 +41,7 @@ class UploadDocuments
 
     public function __construct(
         private readonly PdfInspector $pdf,
+        private readonly InjectionScanner $injection,
         private readonly DailySpendCeiling $ceiling,
     ) {}
 
@@ -87,9 +89,22 @@ class UploadDocuments
 
         // Page count doubles as a readability gate: an encrypted or corrupt PDF
         // is rejected here, before anything is written or a worker is paid for.
-        $pageCount = $extension === 'pdf'
-            ? $this->pdf->pageCount($file->getRealPath())
-            : null;
+        //
+        // The same parse yields the text layer, which is scanned for content
+        // addressed to the model rather than describing a product. Done HERE,
+        // before the file is stored and before a job is queued: a document that
+        // will be refused should cost nothing.
+        $pageCount = null;
+
+        if ($extension === 'pdf') {
+            ['pages' => $pageCount, 'text' => $text] = $this->pdf->inspect($file->getRealPath());
+
+            $findings = $this->injection->scan($text);
+
+            if ($findings !== []) {
+                throw FileRejected::suspiciousContent($findings[0]);
+            }
+        }
 
         // hash_file reads in chunks rather than loading the file into memory —
         // a 20 MB file must never become a 20 MB string, and with 20 files per

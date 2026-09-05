@@ -42,6 +42,38 @@ final class PdfBuilder
     }
 
     /**
+     * A single-page PDF carrying a real text layer.
+     *
+     * The samples in this project are page images with no text at all, so this
+     * is the only way to exercise the injection scanner: a PDF someone built
+     * themselves, with words in it, is exactly the case the scanner exists for.
+     *
+     * The text is drawn with an ordinary BT/Tj block. Deliberately NOT hidden -
+     * hiding it (white ink, one point tall) would test the renderer rather than
+     * the scanner, and getText() returns the characters either way, which is
+     * the property the scanner depends on.
+     */
+    public static function withText(string $text): string
+    {
+        // \ and ( and ) terminate a PDF string literal, so an unescaped
+        // bracket in the text would produce a corrupt file rather than a test.
+        $escaped = str_replace(['\\', '(', ')'], ['\\\\', '\\(', '\\)'], $text);
+
+        $stream = "BT /F1 12 Tf 72 700 Td ({$escaped}) Tj ET";
+
+        $objects = [
+            1 => '<< /Type /Catalog /Pages 2 0 R >>',
+            2 => '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            3 => '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] '
+                .'/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>',
+            4 => '<< /Length '.strlen($stream)." >>\nstream\n".$stream."\nendstream",
+            5 => '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+        ];
+
+        return self::assemble($objects, encrypted: false);
+    }
+
+    /**
      * A PDF that declares /Encrypt in its trailer.
      *
      * smalot/pdfparser refuses these outright, which is the behaviour the upload

@@ -109,4 +109,25 @@ class FileRejected extends RuntimeException
     {
         return new self('upload_failed', 'This file did not upload correctly. Please try again.');
     }
+
+    /**
+     * The PDF's text layer addresses the model rather than describing a
+     * product. See InjectionScanner for what is detected and what is not.
+     *
+     * Refused, not accepted-with-a-warning. The extraction is read by a vision
+     * model off the rendered page, so there is no version of this file that is
+     * safe to process: removing the text from the text layer leaves it visible
+     * on the page and changes nothing about what the model sees.
+     *
+     * The offending phrase is quoted back. A rejection someone cannot act on
+     * is indistinguishable from a bug, and a legitimate document caught by a
+     * pattern needs to show why so it can be reported.
+     */
+    public static function suspiciousContent(string $reason): self
+    {
+        return new self(
+            'suspicious_content',
+            "This file was refused because {$reason}. If this is a genuine product document, please report it."
+        );
+    }
 }

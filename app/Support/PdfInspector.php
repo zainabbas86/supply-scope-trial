@@ -51,9 +51,22 @@ final class PdfInspector
     }
 
     /**
+     * Page count AND the text layer, from a single parse.
+     *
+     * One parse, not two: parsing these files is the expensive part - a real
+     * 283 KB sheet exhausted 128 MB with default settings - so reading the
+     * text separately would double the cost of every upload.
+     *
+     * The text is usually empty. These sheets are page images, and all four
+     * supplied samples contain zero characters between them. It is extracted
+     * anyway because a user can upload any PDF they like, and one built with a
+     * text layer is the cheap way to attempt a prompt injection.
+     *
+     * @return array{pages: int, text: string}
+     *
      * @throws FileRejected when the PDF is encrypted, corrupt, or too long
      */
-    public function pageCount(string $path): int
+    public function inspect(string $path): array
     {
         try {
             $pdf = (new Parser([], $this->config()))->parseFile($path);
@@ -83,6 +96,10 @@ final class PdfInspector
             throw FileRejected::tooManyPages($pages, $max);
         }
 
-        return $pages;
+        // getText() returns text regardless of how it is RENDERED - white on
+        // white, one point tall, positioned off the page. That is precisely
+        // what makes this worth scanning: hiding the text from a human does
+        // not hide it from here.
+        return ['pages' => $pages, 'text' => $pdf->getText()];
     }
 }
