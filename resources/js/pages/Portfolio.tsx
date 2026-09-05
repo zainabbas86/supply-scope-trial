@@ -21,6 +21,7 @@ type Contact = {
     email: string;
     github: string;
     linkedin: string;
+    bugbugbabies: string;
 };
 
 type Role = {
@@ -346,6 +347,16 @@ export default function Portfolio({ contact }: { contact: Contact }) {
                             <h1 className="text-2xl font-semibold tracking-tight">Zain Abbas</h1>
                             <p className="mt-1 text-neutral-600">
                                 Software Developer, Technical Lead, AI Developer &amp; Consultant
+                            </p>
+                            <p>
+                                Co-Founder &nbsp;
+                                <a
+                                    className="text-teal-700 underline-offset-4 hover:underline"
+                                    href={contact.bugbugbabies}
+                                    target="_blank"
+                                    rel="noreferrer noopener">
+                                        Bug Bug Babies
+                                </a>
                             </p>
                             <p className="mt-1 text-sm text-neutral-500">
                                 Sydney, Australia · 17+ years building for the web
