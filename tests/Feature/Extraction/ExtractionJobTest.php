@@ -352,3 +352,57 @@ it('bounds total time with a deadline as well as a retry count', function () {
         ->toBeGreaterThan(now())
         ->toBeLessThan(now()->addMinutes(20));
 });
+
+// -----------------------------------------------------------------------------
+// What a failure is allowed to say out loud
+// -----------------------------------------------------------------------------
+
+it('records the user-facing message on the attempt, never the provider detail', function () {
+    // Provider errors quote OUR request back at us. The real one that prompted
+    // this named the field path, the MIME type, and a documentation URL:
+    //
+    //   Invalid file data: 'input[0].content[0].file_data' ... 'image/jpeg'
+    //
+    // DocumentController::show serialises error_message straight into the page,
+    // so anything stored here is published. The operator's copy belongs in the
+    // log; the reader gets a sentence.
+    $detail = "Invalid file data: 'input[0].content[0].file_data'. "
+        .'Expected a base64-encoded data URL ... unsupported MIME type '
+        ."'image/jpeg'. https://platform.openai.com/docs/assistants/tools/file-search";
+
+    fakeExtractor([TerminalExtractionException::badRequest($detail)]);
+    $document = queuedDocument();
+    runJob($document);
+
+    $attempt = ExtractionAttempt::sole();
+
+    expect($attempt->error_message)->toBe('This document could not be processed by the AI service.')
+        ->and($attempt->error_message)->not->toContain('input[0]')
+        ->and($attempt->error_message)->not->toContain('image/jpeg')
+        ->and($attempt->error_message)->not->toContain('platform.openai.com');
+
+    // The failure is still fully described - by CATEGORIES rather than by
+    // quoting internals, which is what makes it safe to show.
+    expect($attempt->outcome)->toBe(ExtractionOutcome::TerminalError)
+        ->and($attempt->http_status)->toBe(400)
+        ->and($attempt->error_class)->toBe(TerminalExtractionException::class);
+});
+
+it('keeps the provider response out of what the page is given', function () {
+    // raw_response is retained for operators. show() maps attempts field by
+    // field precisely so this is not published; a `...$attempt` spread would
+    // hand over the provider's entire response body.
+    fakeExtractor([
+        TerminalExtractionException::badRequest('detail', ['error' => ['message' => 'internal']]),
+    ]);
+    $document = queuedDocument();
+    runJob($document);
+
+    expect(ExtractionAttempt::sole()->raw_response)->not->toBeNull();
+
+    $this->actingAs($this->owner)
+        ->get(route('documents.show', $document))
+        ->assertOk()
+        ->assertDontSee('internal')
+        ->assertDontSee('detail');
+});

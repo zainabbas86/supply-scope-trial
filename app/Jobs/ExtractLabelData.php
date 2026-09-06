@@ -309,6 +309,31 @@ class ExtractLabelData
         ExtractionException $e,
         int $startedAt,
     ): void {
+        // The TECHNICAL detail goes to the log, and only to the log.
+        //
+        // Provider errors quote our own request back at us. The one that
+        // prompted this said:
+        //
+        //   Invalid file data: 'input[0].content[0].file_data'. Expected a
+        //   base64-encoded data URL ... but got unsupported MIME type
+        //   'image/jpeg'. Please see https://platform.openai.com/docs/...
+        //
+        // Rendered on a page, that hands a reader the provider we use, our
+        // request structure, the field path, and a documentation link — none of
+        // which is theirs to know, and all of which is a map for someone
+        // probing the app. It is exactly the detail an operator needs, and
+        // exactly the detail a user must not be given.
+        //
+        // Log::withContext at the top of handle() has already attached
+        // document_id, so this is attributable without repeating it.
+        Log::error('Extraction attempt failed.', [
+            'attempt' => $attemptNo,
+            'code' => $e->failureCode,
+            'class' => $e::class,
+            'http_status' => $e->httpStatus,
+            'detail' => $e->getMessage(),
+        ]);
+
         ExtractionAttempt::updateOrCreate(
             ['document_id' => $document->id, 'attempt_no' => $attemptNo],
             [
@@ -320,9 +345,20 @@ class ExtractLabelData
                         ? ExtractionOutcome::InvalidOutput
                         : ExtractionOutcome::TerminalError),
                 'error_class' => $e::class,
-                'error_message' => $e->getMessage(),
+
+                // userMessage, NOT getMessage(). This column is serialised
+                // straight into the page by DocumentController::show, so
+                // whatever is here is published. The failure is still fully
+                // described by outcome + error_class + http_status, which are
+                // categories rather than quoted internals.
+                'error_message' => $e->userMessage,
+
                 'http_status' => $e->httpStatus,
                 'latency_ms' => $this->elapsedMs($startedAt),
+
+                // Kept for operators; never exposed. show() maps attempts field
+                // by field and does not include it - a `...$attempt` spread
+                // here would publish the provider's entire response body.
                 'raw_response' => $e->rawResponse,
             ],
         );
