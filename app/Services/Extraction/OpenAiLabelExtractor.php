@@ -125,14 +125,7 @@ class OpenAiLabelExtractor implements LabelExtractor
             'input' => [[
                 'role' => 'user',
                 'content' => [
-                    [
-                        'type' => 'input_file',
-                        'filename' => $document->original_filename,
-                        // Inline base64 rather than an upload to the Files API:
-                        // one request instead of two, nothing to clean up
-                        // afterwards, and no orphaned files if the job dies.
-                        'file_data' => $this->dataUri($document),
-                    ],
+                    $this->documentContent($document),
                     ['type' => 'input_text', 'text' => $prompt],
                 ],
             ]],
@@ -271,6 +264,49 @@ class OpenAiLabelExtractor implements LabelExtractor
         );
     }
 
+    /**
+     * The content part carrying the document itself.
+     *
+     * IMAGES AND PDFS ARE NOT INTERCHANGEABLE HERE.
+     *
+     * The Responses API takes `input_file` with `file_data` for documents, and
+     * `input_image` with `image_url` for images. Sending a jpeg as `input_file`
+     * is rejected outright:
+     *
+     *   Invalid file data: 'input[0].content[0].file_data'. Expected a
+     *   base64-encoded data URL with a valid file MIME type ... but got
+     *   unsupported MIME type 'image/jpeg'.
+     *
+     * Both accept the same `data:<mime>;base64,...` string, which is what made
+     * this easy to get wrong: the value is identical, only the field name and
+     * the part type differ.
+     *
+     * Every upload path reached this: the brief asks for images AND PDFs, and
+     * only the PDFs worked. 151 tests missed it because they assert what we do
+     * with a RESPONSE, and the one test that does check the request used a PDF.
+     *
+     * @return array<string, string>
+     */
+    private function documentContent(Document $document): array
+    {
+        $uri = $this->dataUri($document);
+
+        if (str_starts_with($document->mime_type, 'image/')) {
+            return ['type' => 'input_image', 'image_url' => $uri];
+        }
+
+        return [
+            'type' => 'input_file',
+            'filename' => $document->original_filename,
+            'file_data' => $uri,
+        ];
+    }
+
+    /**
+     * Inline base64 rather than an upload to the Files API: one request instead
+     * of two, nothing to clean up afterwards, and no orphaned files if the job
+     * dies mid-flight.
+     */
     private function dataUri(Document $document): string
     {
         // Read via the disk recorded ON THE DOCUMENT, so files stored before a

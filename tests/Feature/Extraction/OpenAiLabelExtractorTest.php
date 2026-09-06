@@ -124,6 +124,75 @@ it('sends the request shape the responses api requires', function () {
     });
 });
 
+/*
+|------------------------------------------------------------------------------
+| Every accepted type, in the part the API requires
+|------------------------------------------------------------------------------
+|
+| The Responses API takes `input_file`/`file_data` for documents and
+| `input_image`/`image_url` for images. They are not interchangeable: a jpeg
+| sent as input_file is refused outright with
+|
+|   Invalid file data ... got unsupported MIME type 'image/jpeg'
+|
+| Both carry the SAME `data:<mime>;base64,...` value, which is what made this
+| easy to miss — the error lives entirely in the field name. Every image upload
+| failed on it while PDFs worked, and the request-shape test above did not
+| notice because it only ever used a PDF.
+|
+*/
+
+it('sends each accepted file type in the part the api requires', function (
+    string $mime,
+    string $filename,
+    string $expectedPart,
+    string $expectedKey,
+    string $forbiddenKey,
+) {
+    $this->document->update(['mime_type' => $mime, 'original_filename' => $filename]);
+
+    Http::fake(['*' => Http::response($this->fixture, 200)]);
+    runExtractor();
+
+    Http::assertSent(function (Request $request) use ($mime, $expectedPart, $expectedKey, $forbiddenKey) {
+        $content = $request->data()['input'][0]['content'];
+
+        expect(array_column($content, 'type'))->toBe([$expectedPart, 'input_text'])
+            ->and($content[0])->toHaveKey($expectedKey)
+            ->and($content[0])->not->toHaveKey($forbiddenKey)
+            ->and($content[0][$expectedKey])->toStartWith("data:{$mime};base64,");
+
+        return true;
+    });
+})->with([
+    'pdf' => ['application/pdf', 'spec.pdf', 'input_file', 'file_data', 'image_url'],
+    'jpeg' => ['image/jpeg', 'label.jpg', 'input_image', 'image_url', 'file_data'],
+    'png' => ['image/png', 'label.png', 'input_image', 'image_url', 'file_data'],
+    'webp' => ['image/webp', 'label.webp', 'input_image', 'image_url', 'file_data'],
+]);
+
+it('has a case above for every type the upload validator accepts', function () {
+    // The guard that keeps the dataset honest.
+    //
+    // Adding a type to config/uploads.php without deciding how it reaches the
+    // API would otherwise fall silently down the input_file branch — which is
+    // exactly how image support shipped broken. This fails instead, and the
+    // failure names the type nobody chose a part for.
+    $accepted = collect(config('uploads.allowed'))
+        ->flatten()
+        ->unique()
+        ->sort()
+        ->values()
+        ->all();
+
+    expect($accepted)->toBe([
+        'application/pdf',
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+    ]);
+});
+
 // -----------------------------------------------------------------------------
 // Error classification — the retry decision
 // -----------------------------------------------------------------------------
