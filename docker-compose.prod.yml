@@ -63,8 +63,22 @@ services:
             #
             # 301 (`permanent`), not 302: this is a permanent decision about
             # which name the site lives at.
+            #
+            # OPTIONAL. Leave APP_REDIRECT_FROM empty to serve every name in
+            # SERVER_NAME from the app with no redirect at all.
+            #
+            # That matters because a redirecting name needs its OWN certificate,
+            # and Let's Encrypt limits certificates per exact set of hostnames.
+            # Putting both names in SERVER_NAME instead produces ONE certificate
+            # covering both - a different identifier set, with its own quota -
+            # which is the way out when the per-name limit has been exhausted.
+            #
+            # The default below is a placeholder, not a real site: `http://`
+            # disables TLS for that address, so Caddy binds an unused loopback
+            # port and never contacts an ACME server for it. Compose has no
+            # conditionals, so an inert block is how a block gets omitted.
             CADDY_EXTRA_CONFIG: |
-              ${APP_REDIRECT_FROM:?APP_REDIRECT_FROM must be set, e.g. example.com} {
+              ${APP_REDIRECT_FROM:-http://127.0.0.1:9998} {
                   redir https://${APP_DOMAIN}{uri} permanent
               }
 
@@ -119,6 +133,35 @@ services:
             # access to every uploaded file.
             - storage-data:/app/storage/app/private/documents
 
+            # CADDY'S CERTIFICATE STORE. Not optional.
+            #
+            # Without this, /data lives in the container's writable layer and
+            # dies with it. Every deploy recreates `web`, so every deploy threw
+            # away the certificates and asked Let's Encrypt for new ones.
+            #
+            # That is not merely wasteful, it is self-limiting: LE allows five
+            # certificates per exact set of hostnames per 168 hours. Five
+            # deploys in a day exhausted it, and the site then had no
+            # certificate at all and no way to get one for 28 hours:
+            #
+            #   HTTP 429 rateLimited - too many certificates (5) already issued
+            #   for this exact set of identifiers in the last 168h0m0s
+            #
+            # The failure mode is the nasty part. It does not appear on deploy
+            # one, or five; it appears the moment you deploy often enough to
+            # matter, and it presents as a TLS handshake error rather than as
+            # anything mentioning certificates.
+            #
+            # With the volume, a certificate is obtained once and reused across
+            # every subsequent deploy, and renewal happens on Caddy's schedule
+            # (~30 days before expiry) rather than on ours.
+            - caddy-data:/data
+
+            # ACME account keys and autosaved config. Losing these forces a new
+            # ACME account registration on each deploy - harmless next to the
+            # certificate loss, but there is no reason to keep re-doing it.
+            - caddy-config:/config
+
     worker:
         image: ${APP_IMAGE:?APP_IMAGE must be set}
         pull_policy: always
@@ -128,3 +171,10 @@ services:
     migrate:
         image: ${APP_IMAGE:?APP_IMAGE must be set}
         pull_policy: always
+
+volumes:
+    # Declared here rather than in the base file: only a deployment obtains
+    # real certificates. Locally FrankenPHP serves plain HTTP on :8080 and
+    # never touches ACME, so there would be nothing to persist.
+    caddy-data:
+    caddy-config:

@@ -222,8 +222,24 @@ $variables = @{
         # apex, so following an apex link would silently sign you out.
         APP_URL = 'https://www.zainabbas.com.au'
         APP_DOMAIN = 'www.zainabbas.com.au'
-        APP_SERVER_NAME = 'www.zainabbas.com.au'
-        APP_REDIRECT_FROM = 'zainabbas.com.au'
+
+        # BOTH names on ONE certificate, and no redirect.
+        #
+        # The redirect design gives each name its own certificate, which is
+        # tidier and was fine until /data went unpersisted: every deploy
+        # discarded the store and re-issued, and five deploys in a day hit
+        # Let's Encrypt's limit of 5 certificates per exact set of hostnames
+        # per 168 hours. Both names were then unobtainable for 28 hours and the
+        # site served no certificate at all.
+        #
+        # A single certificate covering both names is a DIFFERENT identifier
+        # set with its own quota, so it issues immediately.
+        #
+        # caddy-data now persists the store, so this will not recur. Restoring
+        # the redirect (APP_SERVER_NAME to www only, APP_REDIRECT_FROM to the
+        # apex) is safe once the limit resets.
+        APP_SERVER_NAME = 'www.zainabbas.com.au zainabbas.com.au'
+        APP_REDIRECT_FROM = ''
 
         SSH_HOST = '31.97.71.13'; SSH_USER = 'root'; SSH_PORT = '22'
         DEPLOY_DIR = '/srv/supplyscope'
