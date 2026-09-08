@@ -455,16 +455,27 @@ jobs:
                   #
                   # --head, and NOT --location: following the redirect would
                   # just re-test the canonical host and pass regardless. What
-                  # matters is that a 301 is returned at all.
+                  # matters is that a redirect is returned at all.
+                  #
+                  # APP_REDIRECT_FROM may list SEVERAL hostnames, comma
+                  # separated, because one Caddy site block can hold several
+                  # addresses. Pasting the whole list into a URL would build a
+                  # malformed host and warn on every deploy, so probe the first
+                  # name: they share a site block, so they redirect or fail
+                  # together.
                   redirect_from="${{ vars.APP_REDIRECT_FROM }}"
-                  if [ -n "$redirect_from" ]; then
+                  first_host=$(printf '%s' "$redirect_from" | cut -d, -f1 | tr -d '[:space:]')
+                  if [ -n "$first_host" ]; then
                     code=$(curl --silent --show-error --head --output /dev/null \
                                 --retry 5 --retry-delay 6 --retry-all-errors \
                                 --connect-timeout 10 --write-out '%{http_code}' \
-                                "https://${redirect_from}/") || code=000
+                                "https://${first_host}/") || code=000
                     case "$code" in
-                      301|308) echo "  ${redirect_from} redirects ($code)" ;;
-                      *) echo "::warning::${redirect_from} returned $code, expected a 301 - check APP_REDIRECT_FROM" ;;
+                      # 302 is the expected value: the redirect is deliberately
+                      # temporary so the canonical name can move back without
+                      # stranding visitors on a permanently cached redirect.
+                      301|302|308) echo "  ${first_host} redirects ($code)" ;;
+                      *) echo "::warning::${first_host} returned $code, expected a redirect - check APP_REDIRECT_FROM" ;;
                     esac
                   fi
 
